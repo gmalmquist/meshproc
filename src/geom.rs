@@ -121,7 +121,26 @@ impl Shape for Polygon {
     }
 
     fn signed_distance(&self, pt: Pt3) -> f64 {
-        unimplemented!()
+        let sign = if self.normal * (pt - self.centroid) >= 0.0 { 1.0 } else { -1.0 };
+
+        // If the projection of the point onto the plane of this polygon is contained within the
+        // boundaries of this polygon, that projection will be the closest point.
+        let projection = self.plane().project(pt);
+        if self.contains(projection) {
+            return sign * (projection - pt).mag();
+        }
+
+        // If we're outside the bounds of the polygon, our distance to it is the closest distance
+        // to any of its edges.
+        let mut distance = 0.0;
+        for edge in &self.edges {
+            let edge_distance = edge.distance(pt);
+            if edge_distance < distance {
+                distance = edge_distance;
+            }
+        }
+
+        distance * sign
     }
 }
 

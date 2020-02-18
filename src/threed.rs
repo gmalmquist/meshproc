@@ -360,7 +360,7 @@ impl<'a> LocalPoint<'a> {
         return self.frame.unproject(self);
     }
 
-    pub fn dup(&self) -> LocalPoint<'a> {
+    pub fn clone(&self) -> LocalPoint<'a> {
         LocalPoint {
             frame: &self.frame,
             i: self.i,
@@ -368,8 +368,6 @@ impl<'a> LocalPoint<'a> {
             k: self.k,
         }
     }
-
-    pub fn plus(&self, vec: &LocalVec) {}
 }
 
 impl<'a> LocalVec<'a> {
@@ -377,7 +375,7 @@ impl<'a> LocalVec<'a> {
         return self.basis.unproject(self);
     }
 
-    pub fn dup(&self) -> LocalVec<'a> {
+    pub fn clone(&self) -> LocalVec<'a> {
         LocalVec {
             basis: &self.basis,
             i: self.i,
@@ -386,6 +384,98 @@ impl<'a> LocalVec<'a> {
         }
     }
 }
+
+impl <'a, 'b> ops::Add<&'b LocalVec<'b>> for &'a LocalVec<'a> {
+    type Output = LocalVec<'a>;
+
+    fn add(self, v: &'b LocalVec) -> LocalVec<'a> {
+        LocalVec {
+            basis: &self.basis,
+            i: self.i + v.i,
+            j: self.j + v.j,
+            k: self.k + v.k,
+        }
+    }
+}
+
+impl <'a, 'b> ops::Add<&'b LocalVec<'b>> for &'a LocalPoint<'a> {
+    type Output = LocalPoint<'a>;
+
+    fn add(self, v: &'b LocalVec) -> LocalPoint<'a> {
+        LocalPoint {
+            frame: &self.frame,
+            i: self.i + v.i,
+            j: self.j + v.j,
+            k: self.k + v.k,
+        }
+    }
+}
+
+impl <'a, 'b> ops::Sub<&'b LocalVec<'b>> for &'a LocalPoint<'a> {
+    type Output = LocalPoint<'a>;
+
+    fn sub(self, v: &'b LocalVec) -> LocalPoint<'a> {
+        LocalPoint {
+            frame: &self.frame,
+            i: self.i - v.i,
+            j: self.j - v.j,
+            k: self.k - v.k,
+        }
+    }
+}
+
+impl <'a, 'b> ops::Add<&'b LocalPoint<'b>> for &'a LocalVec<'a> {
+    type Output = LocalPoint<'b>;
+
+    fn add(self, pt: &'b LocalPoint) -> LocalPoint<'b> {
+        LocalPoint {
+            frame: &pt.frame,
+            i: self.i + pt.i,
+            j: self.j + pt.j,
+            k: self.k + pt.k,
+        }
+    }
+}
+
+impl <'a, 'b> ops::Sub<&'b LocalPoint<'b>> for &'a LocalPoint<'a> {
+    type Output = LocalVec<'a>;
+
+    fn sub(self, pt: &'b LocalPoint) -> LocalVec<'a> {
+        LocalVec {
+            basis: &self.frame.basis,
+            i: self.i - pt.i,
+            j: self.j - pt.j,
+            k: self.k - pt.k,
+        }
+    }
+}
+
+impl <'a,> ops::Mul<f64> for &'a LocalVec<'a> {
+    type Output = LocalVec<'a>;
+
+    fn mul(self, s: f64) -> LocalVec<'a> {
+        LocalVec {
+            basis: &self.basis,
+            i: self.i * s,
+            j: self.j * s,
+            k: self.k * s,
+        }
+    }
+}
+
+impl <'a,> ops::Mul<f64> for &'a LocalPoint<'a> {
+    type Output = LocalPoint<'a>;
+
+    fn mul(self, s: f64) -> LocalPoint<'a> {
+        LocalPoint {
+            frame: &self.frame,
+            i: self.i * s,
+            j: self.j * s,
+            k: self.k * s,
+        }
+    }
+}
+
 
 // Vector & Point Addition
 
@@ -663,5 +753,74 @@ mod tests {
 
         lhs += Vec3::new(3., 3., 3.);
         assert_eq!(lhs, Vec3::new(3., 4., 5.));
+    }
+
+    #[test]
+    fn subtracts() {
+        let a = v456();
+        let b = v234();
+        assert_eq!(a - b, Vec3::new(2.0, 2.0, 2.0));
+        assert_eq!(b - a, Vec3::new(-2.0, -2.0, -2.0));
+        assert_eq!(p456() - p345(), v111())
+    }
+
+    #[test]
+    fn scale() {
+        let a = Vec3::new(1.0, 2.0, 3.0);
+        assert_eq!(a * 2.0, Vec3::new(2.0, 4.0, 6.0));
+        assert_eq!(a / 2.0, Vec3::new(0.5, 1.0, 1.5));
+    }
+
+    #[test]
+    fn adds_local() {
+        let basis = Basis3::identity();
+        let a = basis.project(&Vec3::right());
+        let b = basis.project(&Vec3::up());
+        assert_eq!(&a + &b, LocalVec {
+            basis: &basis,
+            i: 1.0,
+            j: 0.0,
+            k: 1.0,
+        });
+    }
+
+    fn v111() -> Vec3 {
+        return Vec3::new(1.0, 1.0, 1.0);
+    }
+
+    fn v123() -> Vec3 {
+        return Vec3::new(1.0, 2.0, 3.0);
+    }
+
+    fn v234() -> Vec3 {
+        return Vec3::new(2.0, 3.0, 4.0);
+    }
+
+    fn v345() -> Vec3 {
+        return Vec3::new(3.0, 4.0, 5.0);
+    }
+
+    fn v456() -> Vec3 {
+        return Vec3::new(4.0, 5.0, 6.0);
+    }
+
+    fn p111() -> Pt3 {
+        return Pt3::new(1.0, 1.0, 1.0);
+    }
+
+    fn p123() -> Pt3 {
+        return Pt3::new(1.0, 2.0, 3.0);
+    }
+
+    fn p234() -> Pt3 {
+        return Pt3::new(2.0, 3.0, 4.0);
+    }
+
+    fn p345() -> Pt3 {
+        return Pt3::new(3.0, 4.0, 5.0);
+    }
+
+    fn p456() -> Pt3 {
+        return Pt3::new(4.0, 5.0, 6.0);
     }
 }
