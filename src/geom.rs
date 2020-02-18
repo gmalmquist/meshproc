@@ -8,6 +8,7 @@ pub trait Shape {
 pub struct RaycastHit {
     pub point: Pt3,
     pub distance: f64,
+    pub normal: Vec3,
 }
 
 pub struct Plane {
@@ -42,6 +43,7 @@ impl Shape for Plane {
         Some(RaycastHit {
             point: ray.at(t),
             distance: t,
+            normal: self.normal,
         })
     }
 
@@ -51,10 +53,10 @@ impl Shape for Plane {
 }
 
 pub struct Polygon {
-    points: Vec<Pt3>,
-    edges: Vec<Edge>,
-    normal: Vec3,
-    centroid: Pt3,
+    pub points: Vec<Pt3>,
+    pub edges: Vec<Edge>,
+    pub normal: Vec3,
+    pub centroid: Pt3,
 }
 
 impl Polygon {
@@ -144,17 +146,17 @@ impl Shape for Polygon {
     }
 }
 
-struct Edge {
-    src: Pt3,
-    dst: Pt3,
+pub struct Edge {
+    pub src: Pt3,
+    pub dst: Pt3,
 }
 
 impl Edge {
-    fn vector(&self) -> Vec3 {
+    pub fn vector(&self) -> Vec3 {
         return self.dst - self.src;
     }
 
-    fn distance(&self, pt: Pt3) -> f64 {
+    pub fn distance(&self, pt: Pt3) -> f64 {
         let frame = Frame3::new(self.src, Basis3::new1(self.vector()));
         let mut local = frame.project(pt);
         if local.i > 0.0 && local.i < 1.0 {
@@ -172,5 +174,39 @@ impl Edge {
         } else {
             dst_dist2.sqrt()
         };
+    }
+}
+
+pub struct Mesh {
+    pub polygons: Vec<Polygon>,
+}
+
+impl Mesh {
+    pub fn new(polygons: Vec<Polygon>) -> Mesh {
+        return Mesh { polygons };
+    }
+}
+
+impl Shape for Mesh {
+    fn raycast(&self, ray: &Ray3) -> Option<RaycastHit> {
+        let mut hit = None;
+        for poly in &self.polygons {
+            let poly_hit = poly.raycast(ray);
+            if let Some(poly_hit) = poly_hit {
+                hit = match hit {
+                    None => None,
+                    Some(hit) => if hit.distance < poly_hit.distance {
+                        Some(hit)
+                    } else {
+                        Some(poly_hit)
+                    }
+                };
+            }
+        }
+        hit
+    }
+
+    fn signed_distance(&self, pt: Pt3) -> f64 {
+        unimplemented!()
     }
 }
