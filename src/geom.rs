@@ -1,5 +1,5 @@
 use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
-use std::f64::{NAN, INFINITY};
+use std::f64::INFINITY;
 
 pub trait Shape {
     fn raycast(&self, ray: &Ray3) -> Option<RaycastHit>;
@@ -124,7 +124,11 @@ impl Shape for Polygon {
     }
 
     fn signed_distance(&self, pt: Pt3) -> f64 {
-        let sign = if self.normal * (pt - self.centroid) >= 0.0 { 1.0 } else { -1.0 };
+        let sign = if self.normal * (pt - self.centroid) >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
 
         // If the projection of the point onto the plane of this polygon is contained within the
         // boundaries of this polygon, that projection will be the closest point.
@@ -197,7 +201,6 @@ impl Cube {
         let forward = dimensions.on_axis(&Vec3::forward());
         let up = dimensions.on_axis(&Vec3::forward());
 
-
         let rfu = (right + forward + up) + center;
         let rfd = (right + forward - up) + center;
         let rbd = (right - forward - up) + center;
@@ -207,10 +210,7 @@ impl Cube {
         let lbd = (-right - forward - up) + center;
         let lbu = (-right - forward + up) + center;
 
-        let vertices = vec![
-            rfu, rfd, rbd, rbu,
-            lfu, lfd, lbd, lbu
-        ];
+        let vertices = vec![rfu, rfd, rbd, rbu, lfu, lfd, lbd, lbu];
 
         let faces = vec![
             Polygon::new(vec![rfu, rbu, lbu, lfu]),
@@ -277,7 +277,7 @@ impl Shape for Sphere {
         let b = 2. * (cq * ray.direction);
         let c = (cq * cq) - self.radius * self.radius;
 
-        let radicand = b*b - 4.*a*c;
+        let radicand = b * b - 4. * a * c;
         if radicand < 0. {
             // Ray is not pointing at the sphere.
             return None;
@@ -299,7 +299,7 @@ impl Shape for Sphere {
 
         let distance = min_positive(t0, t1);
         if distance < 0. {
-            return None
+            return None;
         }
         let point = ray.at(distance);
         Some(RaycastHit {
@@ -330,10 +330,12 @@ impl Mesh {
             if let Some(poly_hit) = poly_hit {
                 hit = match hit {
                     None => None,
-                    Some(hit) => if hit.distance < poly_hit.distance {
-                        Some(hit)
-                    } else {
-                        Some(poly_hit)
+                    Some(hit) => {
+                        if hit.distance < poly_hit.distance {
+                            Some(hit)
+                        } else {
+                            Some(poly_hit)
+                        }
                     }
                 };
             }

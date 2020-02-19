@@ -450,7 +450,7 @@ impl<'a, 'b> ops::Sub<&'b LocalPoint<'b>> for &'a LocalPoint<'a> {
     }
 }
 
-impl<'a, > ops::Mul<f64> for &'a LocalVec<'a> {
+impl<'a> ops::Mul<f64> for &'a LocalVec<'a> {
     type Output = LocalVec<'a>;
 
     fn mul(self, s: f64) -> LocalVec<'a> {
@@ -463,7 +463,7 @@ impl<'a, > ops::Mul<f64> for &'a LocalVec<'a> {
     }
 }
 
-impl<'a, > ops::Mul<f64> for &'a LocalPoint<'a> {
+impl<'a> ops::Mul<f64> for &'a LocalPoint<'a> {
     type Output = LocalPoint<'a>;
 
     fn mul(self, s: f64) -> LocalPoint<'a> {
@@ -475,7 +475,6 @@ impl<'a, > ops::Mul<f64> for &'a LocalPoint<'a> {
         }
     }
 }
-
 
 // Vector & Point Addition
 
@@ -784,12 +783,15 @@ mod tests {
         let basis = Basis3::identity();
         let a = basis.project(&Vec3::right());
         let b = basis.project(&Vec3::up());
-        assert_eq!(&a + &b, LocalVec {
-            basis: &basis,
-            i: 1.0,
-            j: 0.0,
-            k: 1.0,
-        });
+        assert_eq!(
+            &a + &b,
+            LocalVec {
+                basis: &basis,
+                i: 1.0,
+                j: 0.0,
+                k: 1.0,
+            }
+        );
     }
 
     fn v111() -> Vec3 {
