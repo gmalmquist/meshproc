@@ -385,7 +385,7 @@ impl<'a> LocalVec<'a> {
     }
 }
 
-impl <'a, 'b> ops::Add<&'b LocalVec<'b>> for &'a LocalVec<'a> {
+impl<'a, 'b> ops::Add<&'b LocalVec<'b>> for &'a LocalVec<'a> {
     type Output = LocalVec<'a>;
 
     fn add(self, v: &'b LocalVec) -> LocalVec<'a> {
@@ -398,7 +398,7 @@ impl <'a, 'b> ops::Add<&'b LocalVec<'b>> for &'a LocalVec<'a> {
     }
 }
 
-impl <'a, 'b> ops::Add<&'b LocalVec<'b>> for &'a LocalPoint<'a> {
+impl<'a, 'b> ops::Add<&'b LocalVec<'b>> for &'a LocalPoint<'a> {
     type Output = LocalPoint<'a>;
 
     fn add(self, v: &'b LocalVec) -> LocalPoint<'a> {
@@ -411,7 +411,7 @@ impl <'a, 'b> ops::Add<&'b LocalVec<'b>> for &'a LocalPoint<'a> {
     }
 }
 
-impl <'a, 'b> ops::Sub<&'b LocalVec<'b>> for &'a LocalPoint<'a> {
+impl<'a, 'b> ops::Sub<&'b LocalVec<'b>> for &'a LocalPoint<'a> {
     type Output = LocalPoint<'a>;
 
     fn sub(self, v: &'b LocalVec) -> LocalPoint<'a> {
@@ -424,7 +424,7 @@ impl <'a, 'b> ops::Sub<&'b LocalVec<'b>> for &'a LocalPoint<'a> {
     }
 }
 
-impl <'a, 'b> ops::Add<&'b LocalPoint<'b>> for &'a LocalVec<'a> {
+impl<'a, 'b> ops::Add<&'b LocalPoint<'b>> for &'a LocalVec<'a> {
     type Output = LocalPoint<'b>;
 
     fn add(self, pt: &'b LocalPoint) -> LocalPoint<'b> {
@@ -437,7 +437,7 @@ impl <'a, 'b> ops::Add<&'b LocalPoint<'b>> for &'a LocalVec<'a> {
     }
 }
 
-impl <'a, 'b> ops::Sub<&'b LocalPoint<'b>> for &'a LocalPoint<'a> {
+impl<'a, 'b> ops::Sub<&'b LocalPoint<'b>> for &'a LocalPoint<'a> {
     type Output = LocalVec<'a>;
 
     fn sub(self, pt: &'b LocalPoint) -> LocalVec<'a> {
@@ -450,7 +450,7 @@ impl <'a, 'b> ops::Sub<&'b LocalPoint<'b>> for &'a LocalPoint<'a> {
     }
 }
 
-impl <'a,> ops::Mul<f64> for &'a LocalVec<'a> {
+impl<'a, > ops::Mul<f64> for &'a LocalVec<'a> {
     type Output = LocalVec<'a>;
 
     fn mul(self, s: f64) -> LocalVec<'a> {
@@ -463,7 +463,7 @@ impl <'a,> ops::Mul<f64> for &'a LocalVec<'a> {
     }
 }
 
-impl <'a,> ops::Mul<f64> for &'a LocalPoint<'a> {
+impl<'a, > ops::Mul<f64> for &'a LocalPoint<'a> {
     type Output = LocalPoint<'a>;
 
     fn mul(self, s: f64) -> LocalPoint<'a> {
@@ -637,6 +637,14 @@ impl ops::Mul<f64> for Vec3 {
 
     fn mul(self, scale: f64) -> Vec3 {
         return Vec3::new(self.x * scale, self.y * scale, self.z * scale);
+    }
+}
+
+impl ops::Neg for Vec3 {
+    type Output = Vec3;
+
+    fn neg(self) -> Vec3 {
+        return Vec3::new(-self.x, -self.y, -self.z);
     }
 }
 
