@@ -316,11 +316,34 @@ impl Shape for Sphere {
 
 pub struct Mesh {
     pub polygons: Vec<Polygon>,
+    pub bounds: (Pt3, Pt3),
 }
 
 impl Mesh {
     pub fn new(polygons: Vec<Polygon>) -> Mesh {
-        return Mesh { polygons };
+        let mut bounds: Option<(Pt3, Pt3)> = None;
+        for poly in &polygons {
+            for v in &poly.points {
+                match bounds {
+                    Some(mut b) => {
+                        b.0.x = if b.0.x < v.x { b.0.x } else { v.x };
+                        b.0.y = if b.0.y < v.y { b.0.y } else { v.y };
+                        b.0.z = if b.0.z < v.z { b.0.z } else { v.z };
+                        b.1.x = if b.1.x > v.x { b.1.x } else { v.x };
+                        b.1.y = if b.1.y > v.y { b.1.y } else { v.y };
+                        b.1.z = if b.1.z > v.z { b.1.z } else { v.z };
+                        bounds = Some(b);
+                    }
+                    None => {
+                        bounds = Some((v.clone(), v.clone()));
+                    }
+                }
+            }
+        }
+        return Mesh {
+            polygons,
+            bounds: bounds.unwrap_or_else(|| (Pt3::zero(), Pt3::zero())),
+        };
     }
 
     fn raycast_polygons(polygons: &Vec<Polygon>, ray: &Ray3) -> Option<RaycastHit> {

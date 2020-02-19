@@ -1,9 +1,10 @@
 use std::fs;
 use stl_io;
 
-mod geom;
-mod scad;
-mod threed;
+pub mod csg;
+pub mod geom;
+pub mod scad;
+pub mod threed;
 
 use crate::geom::{Mesh, Polygon};
 use crate::threed::{Pt3, Vec3};

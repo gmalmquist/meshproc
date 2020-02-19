@@ -54,6 +54,11 @@ pub struct LocalVec<'a> {
     pub k: f64,
 }
 
+pub union ThreeD<'a> {
+    pub vector: &'a Vec3,
+    pub point: &'a Pt3,
+}
+
 impl Vec3 {
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         return Self { x, y, z };
