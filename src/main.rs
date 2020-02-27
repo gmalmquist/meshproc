@@ -74,9 +74,9 @@ fn csg_test() {
     println!("Running CSG test.");
 
     let cube = geom::Cube::new(threed::Pt3::zero(), threed::Vec3::new(10., 20., 30.), false);
-    let sphere = geom::Sphere::new(threed::Pt3::new(5., 10., 15.), 10.);
+    let sphere = geom::Sphere::new(threed::Pt3::new(5., 10., 15.), 5.);
 
-    let csg = cube.to_csg().difference(&sphere.to_csg());
+    let csg = cube.to_csg().union(&sphere.to_csg());
     match csg.render_stl("test2.stl") {
         Ok(output) => {}
         Err(e) => {

@@ -237,7 +237,7 @@ impl CsgObj for BlenderCsgObj {
     }
 
     fn intersection(&self, obj: &Self::Type) -> Self::Type {
-        self.boolean_modifier(obj, "INTERSECTION")
+        self.boolean_modifier(obj, "INTERSECT")
     }
 }
 
