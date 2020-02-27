@@ -6,6 +6,7 @@ use meshproc::csg::{CsgObj, ToCsg};
 use meshproc::load_mesh_stl;
 use meshproc::scad::{StlImport, ToScad};
 use meshproc::{csg, geom, scad, threed};
+use meshproc::geom::Mesh;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -53,6 +54,17 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
+    let mut pillars = vec![];
+
+    let resolution = 5;
+    let clearance = 1;
+
+    // TODO
+
+    pillars
 }
 
 fn csg_test() {
