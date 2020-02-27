@@ -19,6 +19,7 @@ pub fn load_mesh_stl(path: &str) -> Result<Mesh, std::io::Error> {
     let stl = stl_io::read_stl(&mut file);
     match stl {
         Ok(stl) => Ok(Mesh::new(
+            path,
             stl.faces
                 .iter()
                 .map(|f| {

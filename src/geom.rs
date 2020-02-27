@@ -315,12 +315,13 @@ impl Shape for Sphere {
 }
 
 pub struct Mesh {
+    pub file: String,
     pub polygons: Vec<Polygon>,
     pub bounds: (Pt3, Pt3),
 }
 
 impl Mesh {
-    pub fn new(polygons: Vec<Polygon>) -> Mesh {
+    pub fn new(file: &str, polygons: Vec<Polygon>) -> Mesh {
         let mut bounds: Option<(Pt3, Pt3)> = None;
         for poly in &polygons {
             for v in &poly.points {
@@ -341,6 +342,7 @@ impl Mesh {
             }
         }
         return Mesh {
+            file: file.to_string(),
             polygons,
             bounds: bounds.unwrap_or_else(|| (Pt3::zero(), Pt3::zero())),
         };

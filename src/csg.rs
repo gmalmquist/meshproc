@@ -1,6 +1,3 @@
-use crate::geom;
-use crate::threed::{Pt3, ThreeD, Vec3};
-use futures::io::ErrorKind;
 use std::env;
 use std::env::var;
 use std::fs;
@@ -8,8 +5,13 @@ use std::io;
 use std::io::Write;
 use std::ops::Add;
 use std::process;
+
+use futures::io::ErrorKind;
 use tempfile;
 use uuid;
+
+use crate::geom;
+use crate::threed::{Pt3, ThreeD, Vec3};
 
 pub trait CsgObj {
     type Type: CsgObj;
@@ -36,6 +38,12 @@ impl ToCsg<BlenderCsgObj> for geom::Cube {
 impl ToCsg<BlenderCsgObj> for geom::Sphere {
     fn to_csg(&self) -> BlenderCsgObj {
         BlenderCsgObj::sphere(&self)
+    }
+}
+
+impl ToCsg<BlenderCsgObj> for geom::Mesh {
+    fn to_csg(&self) -> BlenderCsgObj {
+        BlenderCsgObj::mesh(&self)
     }
 }
 
@@ -90,13 +98,29 @@ impl BlenderCsgObj {
                     "  cube = bpy.context.view_layer.objects.active",
                     &format!("  cube.name = '{}'", variable_name),
                     &format!("  bpy.context.view_layer.objects.active.scale = ({}, {}, {})",
-                        dimensions.x, dimensions.y, dimensions.z),
+                             dimensions.x, dimensions.y, dimensions.z),
                     "  return cube",
                     &format!("{} = {}()", variable_name, fn_name),
                 ]
-                .join("\n")
+                    .join("\n")
             }),
         };
+    }
+
+    pub fn mesh(mesh: &geom::Mesh) -> Self {
+        Self::stl(&mesh.file)
+    }
+
+    pub fn stl(path: &str) -> Self {
+        let path = String::from(path);
+        BlenderCsgObj {
+            create_python_code: Box::new(move |variable_name| {
+                [
+                    format!("bpy.ops.import_mesh.stl(filepath=r'{}')", path),
+                    format!("{} = bpy.context.object", variable_name),
+                ].join("\n")
+            })
+        }
     }
 
     fn get_code(&self, variable_name: &str) -> String {
@@ -128,7 +152,7 @@ impl BlenderCsgObj {
                 format!("  return {}", a_name),
                 format!("{} = {}()", variable_name, fn_name),
             ]
-            .join("\n")
+                .join("\n")
         };
         return BlenderCsgObj {
             create_python_code: Box::new(create_python_code),
@@ -163,8 +187,8 @@ impl CsgObj for BlenderCsgObj {
                 "import sys",
                 "import time",
             ]
-            .join("\n")
-            .as_bytes(),
+                .join("\n")
+                .as_bytes(),
         );
         script_file.write("\n".as_bytes());
 
@@ -182,7 +206,7 @@ impl CsgObj for BlenderCsgObj {
                     "bpy.ops.wm.save_as_mainfile(filepath=r'{}.blend')\n",
                     &stl_path
                 )
-                .as_bytes(),
+                    .as_bytes(),
             );
         }
 
@@ -200,27 +224,32 @@ impl CsgObj for BlenderCsgObj {
         match process.output() {
             Ok(output) => {
                 let stdout = String::from_utf8(output.stdout).unwrap_or(String::from("n/a"));
-                let stderr= String::from_utf8(output.stderr).unwrap_or(String::from("n/a"));
+                let stderr = String::from_utf8(output.stderr).unwrap_or(String::from("n/a"));
                 if output.status.success() {
                     println!("Blender exited with status {}.", output.status.code().unwrap_or(-1));
-                    println!("Blender stdout: {}", stdout);
-                    println!("Blender stderr: {}", stderr);
+                    println!("Blender stdout: \n{}", indent(&stdout, 2));
+                    println!("Blender stderr: \n{}", indent(&stderr, 2));
                     if stderr.trim().len() > 0 {
                         println!("Since stderr isn't empty, assuming script was incorrect.");
-                    }
-                    if let Ok(script) = std::fs::read(script_path) {
-                        if let Ok(_) = std::fs::write("debug.py", script) {
-                            println!("Dumped blender script to debug.py for investigation.");
+                        if let Ok(script) = std::fs::read(script_path) {
+                            if let Ok(_) = std::fs::write("debug.py", script) {
+                                println!("Dumped blender script to debug.py for investigation.");
+                            }
                         }
+                        Err(io::Error::new(
+                            ErrorKind::InvalidInput,
+                            stderr,
+                        ))
+                    } else {
+                        Ok(())
                     }
-                    Ok(())
                 } else {
                     Err(io::Error::new(
                         ErrorKind::Other,
                         format!(
-                        "=== stdout ===\n{}\n\n=== stderr ===\n{}",
-                        stdout,
-                        stderr),
+                            "=== stdout ===\n{}\n\n=== stderr ===\n{}",
+                            stdout,
+                            stderr),
                     ))
                 }
             }

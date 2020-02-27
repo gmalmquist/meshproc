@@ -14,11 +14,6 @@ fn main() {
         std::process::exit(1);
     }
 
-    if &args[0] == "csg-test" {
-        csg_test();
-        return;
-    }
-
     let stl_path = &match get_path(&args[0]) {
         Ok(s) => s,
         Err(e) => {
@@ -43,25 +38,15 @@ fn main() {
 
     let sphere = geom::Sphere::new(
         (0.5 * bounds.0) + (0.5 * bounds.1),
-        (bounds.1 - bounds.0).mag() / 2.0,
+        (bounds.1 - bounds.0).mag() / 4.0,
     );
 
-    let scad = StlImport::new(stl_path)
-        .to_scad()
-        .difference(sphere.to_scad());
+    let csg = mesh.to_csg()
+        .difference(&sphere.to_csg());
 
-    println!("ScadCode:\n{}", scad.to_string());
-    match scad.render("test1.stl") {
-        Ok(output) => {
-            println!("OpenScad returned {:#?}", output.status.code());
-            println!(
-                "STDOUT\n{}\n",
-                String::from_utf8(output.stderr).unwrap_or(String::from("(n/a)"))
-            );
-            println!(
-                "STDERR\n{}",
-                String::from_utf8(output.stdout).unwrap_or(String::from("(n/a)"))
-            );
+    match csg.render_stl("test1.stl") {
+        Ok(()) => {
+            println!("Done.");
         }
         Err(e) => {
             println!("Unable to render mesh: {}", e);
