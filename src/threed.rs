@@ -354,7 +354,12 @@ impl Frame3 {
     }
 
     pub fn local(&self, i: f64, j: f64, k: f64) -> LocalPoint {
-        return LocalPoint { frame: &self, i, j, k }
+        return LocalPoint {
+            frame: &self,
+            i,
+            j,
+            k,
+        };
     }
 
     pub fn identity() -> Self {

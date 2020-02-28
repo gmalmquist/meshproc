@@ -36,7 +36,7 @@ impl Iterator for FloatRange {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_index >= self.step_count {
-            return None
+            return None;
         }
         let s = if self.step_count <= 1 {
             0.5

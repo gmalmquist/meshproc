@@ -4,8 +4,8 @@ use stl_io;
 pub mod csg;
 pub mod geom;
 pub mod scad;
-pub mod threed;
 pub mod scalar;
+pub mod threed;
 
 use crate::geom::{Mesh, Polygon};
 use crate::threed::{Pt3, Vec3};

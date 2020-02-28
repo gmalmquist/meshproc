@@ -3,12 +3,12 @@ use std::fs;
 
 use futures::io::{Error, ErrorKind};
 use meshproc::csg::{CsgObj, ToCsg};
+use meshproc::geom::{Cube, Mesh, Polygon, Shape};
 use meshproc::load_mesh_stl;
 use meshproc::scad::{StlImport, ToScad};
-use meshproc::{csg, geom, scad, threed};
-use meshproc::geom::{Mesh, Polygon, Shape, Cube};
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
+use meshproc::{csg, geom, scad, threed};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -44,8 +44,7 @@ fn main() {
         (bounds.1 - bounds.0).mag() / 4.0,
     );
 
-    let csg = mesh.to_csg()
-        .difference(&sphere.to_csg());
+    let csg = mesh.to_csg().difference(&sphere.to_csg());
 
     match csg.render_stl("test1.stl") {
         Ok(()) => {
@@ -70,16 +69,16 @@ fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
     for x in FloatRange::from_step_size(
         mind.x + clearance,
         maxd.x - cell_width - clearance,
-        resolution) {
+        resolution,
+    ) {
         for y in FloatRange::from_step_size(
             mind.y + clearance,
             maxd.y - cell_width - clearance,
-            resolution) {
-            let column = generate_pillar(
-                x, y, cell_width, &mesh, clearance);
+            resolution,
+        ) {
+            let column = generate_pillar(x, y, cell_width, &mesh, clearance);
         }
     }
-
 
     pillars
 }
@@ -89,7 +88,8 @@ fn generate_pillar(
     base_y: f64,
     side: f64,
     mesh: &Mesh,
-    clearance: f64) -> Option<geom::Cube> {
+    clearance: f64,
+) -> Option<geom::Cube> {
     let (mind, maxd) = &mesh.bounds;
 
     let base_z = mind.z + clearance;

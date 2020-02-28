@@ -1,6 +1,6 @@
-use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3, LocalPoint};
-use std::f64::INFINITY;
 use crate::scalar::FloatRange;
+use crate::threed::{Basis3, Frame3, LocalPoint, Pt3, Ray3, Vec3};
+use std::f64::INFINITY;
 
 pub trait Shape {
     fn raycast(&self, ray: &Ray3) -> Option<RaycastHit>;
@@ -138,7 +138,6 @@ impl Polygon {
         let i_values = FloatRange::from_step_size(min.0, max.0, resolution).collect();
         let j_values = FloatRange::from_step_size(min.1, max.1, resolution).collect();
 
-
         FacePointIter {
             polygon: &self,
             frame,
@@ -168,7 +167,9 @@ impl<'a> Iterator for FacePointIter<'a> {
         if i_index >= self.i_values.len() || j_index >= self.j_values.len() {
             return None;
         }
-        let local = self.frame.local(self.i_values[i_index], self.j_values[j_index], 0.);
+        let local = self
+            .frame
+            .local(self.i_values[i_index], self.j_values[j_index], 0.);
         Some(self.frame.unproject(&local))
     }
 }
