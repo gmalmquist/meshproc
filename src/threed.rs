@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use std::ops;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -311,6 +312,13 @@ impl Basis3 {
         Self::new2((axis, ortho))
     }
 
+    pub fn from_normal(normal: Vec3) -> Self {
+        let mut basis = Self::new1(normal);
+        // We want the 'normal' axis to be K, but new1 uses the input vector for I.
+        std::mem::swap(&mut basis.axes.0, &mut basis.axes.2);
+        basis
+    }
+
     pub fn project(&self, v: &Vec3) -> LocalVec {
         LocalVec {
             basis: &self,
@@ -397,6 +405,41 @@ impl<'a> LocalVec<'a> {
             j: self.j,
             k: self.k,
         }
+    }
+}
+
+impl Display for Pt3 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({:.5}, {:.5}, {:.5})", self.x, self.y, self.z)
+    }
+}
+
+impl Display for Vec3 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{:.5}, {:.5}, {:.5}>", self.x, self.y, self.z)
+    }
+}
+
+impl Display for Basis3 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(I={}, J={}, K={})",
+            self.axes.0.to_string(),
+            self.axes.1.to_string(),
+            self.axes.2.to_string()
+        )
+    }
+}
+
+impl Display for Frame3 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(O={}, {})",
+            self.origin.to_string(),
+            self.basis.to_string()
+        )
     }
 }
 

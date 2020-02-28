@@ -139,9 +139,9 @@ impl BlenderCsgObj {
         let operation = operation.to_string();
         let create_python_code = move |variable_name: &str| -> String {
             [
+                format!("{}", &a_code),
+                format!("{}", &b_code),
                 format!("def {}():", fn_name),
-                indent(&a_code, 2),
-                indent(&b_code, 2),
                 format!("  bpy.context.view_layer.objects.active = {}", a_name),
                 format!("  {}.select_set(True)", a_name),
                 format!(

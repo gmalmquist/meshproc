@@ -109,9 +109,7 @@ impl Polygon {
     }
 
     pub fn points<'a>(&'a self, resolution: f64) -> FacePointIter<'a> {
-        let basis = Basis3::new1(self.normal);
-        let basis = Basis3::new((basis.axes.2, basis.axes.0, basis.axes.1));
-
+        let basis = Basis3::from_normal(self.normal);
         let frame = Frame3::new(self.centroid, basis);
 
         let mut min = (None, None);
@@ -416,15 +414,15 @@ impl Mesh {
     }
 
     fn raycast_polygons(polygons: &Vec<Polygon>, ray: &Ray3) -> Option<RaycastHit> {
-        let mut hit: Option<RaycastHit> = None;
+        let mut closest_hit: Option<RaycastHit> = None;
         for poly in polygons {
             let poly_hit = poly.raycast(ray);
             if let Some(poly_hit) = poly_hit {
-                hit = match hit {
-                    None => None,
-                    Some(hit) => {
-                        if hit.distance < poly_hit.distance {
-                            Some(hit)
+                closest_hit = match closest_hit {
+                    None => Some(poly_hit),
+                    Some(closest_hit) => {
+                        if closest_hit.distance < poly_hit.distance {
+                            Some(closest_hit)
                         } else {
                             Some(poly_hit)
                         }
@@ -432,7 +430,7 @@ impl Mesh {
                 };
             }
         }
-        hit
+        closest_hit
     }
 
     fn signed_distance_polygons(polygons: &Vec<Polygon>, pt: Pt3) -> f64 {

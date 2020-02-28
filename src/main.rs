@@ -9,7 +9,7 @@ use meshproc::scad::{StlImport, ToScad};
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
 use meshproc::{csg, geom, scad, threed};
-use std::io::{Write};
+use std::io::Write;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -38,7 +38,7 @@ fn main() {
     println!("Loaded: mesh has {} faces.", mesh.polygons.len());
 
     let bounds = &mesh.bounds;
-    println!("Bounds: {:#?}", bounds);
+    println!("Bounds: {} to {}", bounds.0, bounds.1);
 
     let mut csg = mesh.to_csg();
     for pillar in generate_internal_pillars(&mesh) {
@@ -64,6 +64,8 @@ fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
     let cell_width = resolution - clearance;
 
     let (mind, maxd) = &mesh.bounds;
+
+    
 
     for x in FloatRange::from_step_size(
         mind.x + clearance,
