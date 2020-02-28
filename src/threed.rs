@@ -336,7 +336,8 @@ impl Frame3 {
         Self { origin, basis }
     }
 
-    pub fn project(&self, pt: Pt3) -> LocalPoint {
+    pub fn project(&self, pt: &Pt3) -> LocalPoint {
+        let pt = pt.clone();
         LocalPoint {
             frame: &self,
             i: (pt - self.origin).dot(&self.basis.axes.0) / self.basis.axes.0.mag2(),
@@ -350,6 +351,10 @@ impl Frame3 {
             + (local.i * self.basis.axes.0)
             + (local.j * self.basis.axes.1)
             + (local.k * self.basis.axes.2)
+    }
+
+    pub fn local(&self, i: f64, j: f64, k: f64) -> LocalPoint {
+        return LocalPoint { frame: &self, i, j, k }
     }
 
     pub fn identity() -> Self {

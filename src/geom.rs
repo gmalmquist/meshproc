@@ -1,5 +1,6 @@
-use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
+use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3, LocalPoint};
 use std::f64::INFINITY;
+use crate::scalar::FloatRange;
 
 pub trait Shape {
     fn raycast(&self, ray: &Ray3) -> Option<RaycastHit>;
@@ -106,6 +107,70 @@ impl Polygon {
         }
         true
     }
+
+    pub fn points<'a>(&'a self, resolution: f64) -> FacePointIter<'a> {
+        let basis = Basis3::new1(self.normal);
+        let basis = Basis3::new((basis.axes.2, basis.axes.0, basis.axes.1));
+
+        let frame = Frame3::new(self.centroid, basis);
+
+        let mut min = (None, None);
+        let mut max = (None, None);
+        for pt in &self.points {
+            let local = frame.project(pt);
+            if min.0.is_none() || min.0.unwrap() < local.i {
+                min.0 = Some(local.i);
+            }
+            if max.0.is_none() || max.0.unwrap() > local.i {
+                max.0 = Some(local.i);
+            }
+            if min.1.is_none() || min.1.unwrap() < local.j {
+                min.1 = Some(local.j);
+            }
+            if max.1.is_none() || max.1.unwrap() > local.j {
+                max.1 = Some(local.j);
+            }
+        }
+
+        let min = (min.0.unwrap(), min.1.unwrap());
+        let max = (max.0.unwrap(), max.1.unwrap());
+
+        let i_values = FloatRange::from_step_size(min.0, max.0, resolution).collect();
+        let j_values = FloatRange::from_step_size(min.1, max.1, resolution).collect();
+
+
+        FacePointIter {
+            polygon: &self,
+            frame,
+            i_values,
+            j_values,
+            index: 0,
+            resolution,
+        }
+    }
+}
+
+pub struct FacePointIter<'a> {
+    polygon: &'a Polygon,
+    frame: Frame3,
+    i_values: Vec<f64>,
+    j_values: Vec<f64>,
+    index: usize,
+    resolution: f64,
+}
+
+impl<'a> Iterator for FacePointIter<'a> {
+    type Item = Pt3;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let i_index = self.index / self.i_values.len();
+        let j_index = self.index % self.i_values.len();
+        if i_index >= self.i_values.len() || j_index >= self.j_values.len() {
+            return None;
+        }
+        let local = self.frame.local(self.i_values[i_index], self.j_values[j_index], 0.);
+        Some(self.frame.unproject(&local))
+    }
 }
 
 impl Shape for Polygon {
@@ -163,7 +228,7 @@ impl Edge {
 
     pub fn distance(&self, pt: Pt3) -> f64 {
         let frame = Frame3::new(self.src, Basis3::new1(self.vector()));
-        let mut local = frame.project(pt);
+        let mut local = frame.project(&pt);
         if local.i > 0.0 && local.i < 1.0 {
             // Closest point is on the interior of the edge, so return the distance from that.
             // Zero out orthogonal components to get the closest point.

@@ -6,7 +6,9 @@ use meshproc::csg::{CsgObj, ToCsg};
 use meshproc::load_mesh_stl;
 use meshproc::scad::{StlImport, ToScad};
 use meshproc::{csg, geom, scad, threed};
-use meshproc::geom::Mesh;
+use meshproc::geom::{Mesh, Polygon, Shape, Cube};
+use meshproc::scalar::FloatRange;
+use meshproc::threed::{Pt3, Ray3, Vec3};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -59,12 +61,71 @@ fn main() {
 fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
     let mut pillars = vec![];
 
-    let resolution = 5;
-    let clearance = 1;
+    let resolution = 5.;
+    let clearance = 1.;
+    let cell_width = resolution - clearance;
 
-    // TODO
+    let (mind, maxd) = &mesh.bounds;
+
+    for x in FloatRange::from_step_size(
+        mind.x + clearance,
+        maxd.x - cell_width - clearance,
+        resolution) {
+        for y in FloatRange::from_step_size(
+            mind.y + clearance,
+            maxd.y - cell_width - clearance,
+            resolution) {
+            let column = generate_pillar(
+                x, y, cell_width, &mesh, clearance);
+        }
+    }
+
 
     pillars
+}
+
+fn generate_pillar(
+    base_x: f64,
+    base_y: f64,
+    side: f64,
+    mesh: &Mesh,
+    clearance: f64) -> Option<geom::Cube> {
+    let (mind, maxd) = &mesh.bounds;
+
+    let base_z = mind.z + clearance;
+
+    let mut top_face = Polygon::new(vec![
+        Pt3::new(base_x, base_y, base_z),
+        Pt3::new(base_x + side, base_y, base_z),
+        Pt3::new(base_x + side, base_y + side, base_z),
+        Pt3::new(base_x, base_y + side, base_z),
+    ]);
+
+    let mut height: Option<f64> = None;
+    for pt in top_face.points(1.) {
+        let hit = mesh.raycast(&Ray3::new(pt, Vec3::up()));
+        if let Some(hit) = hit {
+            if height.is_none() || height.unwrap() > hit.distance {
+                height = Some(hit.distance);
+            }
+        }
+    }
+
+    if let Some(height) = height {
+        let height = height - clearance;
+        if height < clearance {
+            // NB: We use the clearance as the minimum valid height, which seems reasonable
+            // but may not be obvious.
+            return None;
+        }
+
+        return Some(Cube::new(
+            Pt3::new(base_x, base_y, base_z),
+            Vec3::new(side, side, height),
+            false,
+        ));
+    }
+    None
 }
 
 fn csg_test() {
