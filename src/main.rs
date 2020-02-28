@@ -9,6 +9,7 @@ use meshproc::scad::{StlImport, ToScad};
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
 use meshproc::{csg, geom, scad, threed};
+use std::io::{Write};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -39,14 +40,12 @@ fn main() {
     let bounds = &mesh.bounds;
     println!("Bounds: {:#?}", bounds);
 
-    let sphere = geom::Sphere::new(
-        (0.5 * bounds.0) + (0.5 * bounds.1),
-        (bounds.1 - bounds.0).mag() / 4.0,
-    );
+    let mut csg = mesh.to_csg();
+    for pillar in generate_internal_pillars(&mesh) {
+        csg = csg.difference(&pillar.to_csg());
+    }
 
-    let csg = mesh.to_csg().difference(&sphere.to_csg());
-
-    match csg.render_stl("test1.stl") {
+    match csg.render_stl("test3.stl") {
         Ok(()) => {
             println!("Done.");
         }
@@ -76,9 +75,15 @@ fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
             maxd.y - cell_width - clearance,
             resolution,
         ) {
-            let column = generate_pillar(x, y, cell_width, &mesh, clearance);
+            print!("Generating pillar {} x {}              \r", x, y);
+            std::io::stdout().flush();
+            let pillar = generate_pillar(x, y, cell_width, &mesh, clearance);
+            if let Some(pillar) = pillar {
+                pillars.push(pillar);
+            }
         }
     }
+    println!("\nGenerated {} pillars.", pillars.len());
 
     pillars
 }

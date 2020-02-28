@@ -164,6 +164,7 @@ impl<'a> Iterator for FacePointIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let i_index = self.index / self.i_values.len();
         let j_index = self.index % self.i_values.len();
+        self.index += 1;
         if i_index >= self.i_values.len() || j_index >= self.j_values.len() {
             return None;
         }
