@@ -82,6 +82,9 @@ impl Polygon {
             cy += pt.y;
             cz += pt.z;
         }
+        cx /= points.len() as f64;
+        cy /= points.len() as f64;
+        cz /= points.len() as f64;
         let centroid = Pt3::new(cx, cy, cz);
         Self {
             points,
@@ -262,9 +265,9 @@ impl Cube {
             origin + dimensions / 2.0
         };
 
-        let right = dimensions.on_axis(&Vec3::right());
-        let forward = dimensions.on_axis(&Vec3::forward());
-        let up = dimensions.on_axis(&Vec3::forward());
+        let right = dimensions.on_axis(&Vec3::right()) / 2.;
+        let forward = dimensions.on_axis(&Vec3::forward()) / 2.;
+        let up = dimensions.on_axis(&Vec3::up()) / 2.;
 
         let rfu = (right + forward + up) + center;
         let rfd = (right + forward - up) + center;
@@ -288,9 +291,9 @@ impl Cube {
 
         Cube {
             center,
-            dimensions: dimensions,
-            vertices: vertices,
-            faces: faces,
+            dimensions,
+            vertices,
+            faces,
         }
     }
 }

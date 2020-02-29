@@ -82,7 +82,6 @@ impl BlenderCsgObj {
         return BlenderCsgObj {
             create_python_code: Box::new(move |variable_name| {
                 let fn_name = random_id();
-                let cube_size = 1.0 / Vec3::new(1., 1., 1.).mag();
                 [
                     &format!("def {}():", fn_name),
                     // The "size" of the cube we pass in here is the distance from the center
@@ -90,9 +89,8 @@ impl BlenderCsgObj {
                     // are contained within the radius (not the center of the faces), so we have
                     // to scale the radius down by the magnitude of the <1, 1, 1> vector.
                     &format!(
-                        "  bpy.ops.mesh.primitive_cube_add(location={}, size={})",
+                        "  bpy.ops.mesh.primitive_cube_add(location={}, size=1.0)",
                         blender_vec(&center.to_tuple()),
-                        cube_size
                     ),
                     // Cube is automatically selected after creation.
                     "  cube = bpy.context.view_layer.objects.active",
@@ -104,7 +102,7 @@ impl BlenderCsgObj {
                     "  return cube",
                     &format!("{} = {}()", variable_name, fn_name),
                 ]
-                .join("\n")
+                    .join("\n")
             }),
         };
     }
@@ -121,7 +119,7 @@ impl BlenderCsgObj {
                     format!("bpy.ops.import_mesh.stl(filepath=r'{}')", path),
                     format!("{} = bpy.context.object", variable_name),
                 ]
-                .join("\n")
+                    .join("\n")
             }),
         }
     }
@@ -151,11 +149,13 @@ impl BlenderCsgObj {
                 format!("  mod.object = {}", b_name),
                 format!("  mod.operation = '{}'", operation),
                 format!("  bpy.ops.object.modifier_apply(modifier=mod.name)"),
-                format!("  bpy.context.scene.collection.objects.unlink({})", b_name),
+                format!("  {}bpy.context.scene.collection.objects.unlink({})",
+                        if let Ok(_) = env::var("DEBUG") { "#" } else { "" },
+                        b_name),
                 format!("  return {}", a_name),
                 format!("{} = {}()", variable_name, fn_name),
             ]
-            .join("\n")
+                .join("\n")
         };
         return BlenderCsgObj {
             create_python_code: Box::new(create_python_code),
@@ -190,8 +190,8 @@ impl CsgObj for BlenderCsgObj {
                 "import sys",
                 "import time",
             ]
-            .join("\n")
-            .as_bytes(),
+                .join("\n")
+                .as_bytes(),
         );
         script_file.write("\n".as_bytes());
 
@@ -209,16 +209,16 @@ impl CsgObj for BlenderCsgObj {
                     "bpy.ops.wm.save_as_mainfile(filepath=r'{}.blend')\n",
                     &stl_path
                 )
-                .as_bytes(),
+                    .as_bytes(),
             );
         }
 
         // Export the scene as an stl.
         script_file
-            .write(format!("bpy.ops.export_mesh.stl(filepath=r'{}')\n", &stl_path).as_bytes());
+            .write(format!("bpy.ops.export_mesh.stl(filepath=r'{}', use_scene_unit=True)\n", &stl_path).as_bytes());
 
         println!(
-            "Wrote code to scad file at {}",
+            "Wrote code to blender script at {}",
             &script_path.to_str().unwrap()
         );
 
@@ -235,8 +235,8 @@ impl CsgObj for BlenderCsgObj {
                     );
                     println!("Blender stdout: \n{}", indent(&stdout, 2));
                     println!("Blender stderr: \n{}", indent(&stderr, 2));
-                    if stderr.trim().len() > 0 {
-                        println!("Since stderr isn't empty, assuming script was incorrect.");
+                    if stderr.trim().len() > 0 || true {
+                        println!("Since stderr isn't empty, script may have been invalid.");
                         if let Ok(script) = std::fs::read(script_path) {
                             if let Ok(_) = std::fs::write("debug.py", script) {
                                 println!("Dumped blender script to debug.py for investigation.");

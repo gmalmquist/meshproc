@@ -55,7 +55,6 @@ fn main() {
         }
     }
 }
-
 fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
     let mut pillars = vec![];
 
@@ -65,7 +64,7 @@ fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
 
     let (mind, maxd) = &mesh.bounds;
 
-    
+
 
     for x in FloatRange::from_step_size(
         mind.x + clearance,
