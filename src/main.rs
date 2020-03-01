@@ -22,6 +22,11 @@ fn main() {
         std::process::exit(1);
     }
 
+    if &args[0] == "cube-normal-test" {
+        cube_normal_test();
+        return;
+    }
+
     let stl_path = &match get_path(&args[0]) {
         Ok(s) => s,
         Err(e) => {
@@ -60,18 +65,38 @@ fn main() {
         }
     }
 }
+
+fn cube_normal_test() {
+    let cube = geom::Cube::new(Pt3::zero(), Vec3::new(10., 10., 10.), true);
+
+    let mut csg = cube.to_csg();
+
+    for face in &cube.faces {
+        println!("Face: {}, {}", face.normal, face.normal * 10.);
+        for point in face.points(1.) {
+            csg = csg.union(
+                &geom::Cube::new(point + (face.normal * 3.), Vec3::new(0.5, 0.5, 0.5), true)
+                    .to_csg(),
+            );
+        }
+    }
+
+    csg.render_stl("test-normals.stl");
+}
+
 fn generate_internal_pillars(mesh: Arc<Mesh>) -> Vec<geom::Cube> {
     let mut pillars = vec![];
 
-    let resolution = 5.;
-    let clearance = 1.;
+    let resolution = 8.;
+    let clearance = 1.0;
     let cell_width = resolution - clearance;
 
     let (mind, maxd) = &mesh.bounds;
 
     let mut futures = vec![];
-    let threadpool =
-        executor::ThreadPool::new().expect("Unable to create thread pool for pillar generation!");
+    let threadpool = executor::ThreadPoolBuilder::new()
+        .create()
+        .expect("Unable to create thread pool for pillar generation!");
 
     for x in FloatRange::from_step_size(
         mind.x + clearance,
@@ -112,8 +137,8 @@ fn generate_pillar(
     mesh: &Mesh,
     clearance: f64,
 ) -> Option<geom::Cube> {
+    let ray_spacing = 1.0;
     let (mind, maxd) = &mesh.bounds;
-
     let base_z = mind.z + clearance;
 
     let bottom_face = Polygon::new(vec![
@@ -124,7 +149,7 @@ fn generate_pillar(
     ]);
 
     let mut height: Option<f64> = None;
-    for pt in bottom_face.points(1.) {
+    for pt in bottom_face.points(ray_spacing) {
         let hit = mesh.raycast(&Ray3::new(pt, Vec3::up()));
         if let Some(hit) = hit {
             if height.is_none() || height.unwrap() > hit.distance {
@@ -134,7 +159,7 @@ fn generate_pillar(
     }
 
     if let Some(height) = height {
-        let height = height - clearance;
+        let mut height = height - clearance;
         if height < clearance {
             // NB: We use the clearance as the minimum valid height, which seems reasonable
             // but may not be obvious.
@@ -147,15 +172,33 @@ fn generate_pillar(
             false,
         );
 
+        let mut lowest_tangent_collision: Option<f64> = None;
         for face in &cube.faces {
-            for point in &face.points {
+            for point in face.points(ray_spacing) {
                 let hit = mesh.raycast(&Ray3::new(point.clone(), face.normal));
                 if let Some(hit) = hit {
-                    if hit.distance < clearance {
-                        return None;
+                    if hit.distance >= clearance {
+                        continue; // This is fine.
+                    }
+                    let hit_height = hit.point.z - base_z;
+                    if lowest_tangent_collision.is_none()
+                        || lowest_tangent_collision.unwrap() > hit_height
+                    {
+                        lowest_tangent_collision = Some(hit_height);
                     }
                 }
             }
+        }
+        if let Some(lowest_tangent_collision) = lowest_tangent_collision {
+            let new_height = lowest_tangent_collision - clearance;
+            if new_height < clearance {
+                return None;
+            }
+            return Some(Cube::new(
+                Pt3::new(base_x, base_y, base_z),
+                Vec3::new(side, side, new_height),
+                false,
+            ));
         }
 
         return Some(cube);

@@ -134,6 +134,24 @@ impl BlenderCsgObj {
         let b_name = random_id();
         let a_code = self.get_code(&a_name);
         let b_code = obj.get_code(&b_name);
+        let debug = env::var("DEBUG").is_ok();
+
+        if debug {
+            // Don't actually generate boolean operations for debugs, because they can be expensive.
+            // Instead, just generate all the constituent objects that would be used in boolean
+            // operations, so we can look at them in the generated .blend file.
+            return BlenderCsgObj {
+                create_python_code: Box::new(move |variable_name: &str| -> String {
+                    [
+                        format!("{}", &a_code),
+                        format!("{}", &b_code),
+                        format!("{} = {}", variable_name, &a_name),
+                    ]
+                    .join("\n")
+                }),
+            };
+        }
+
         let operation = operation.to_string();
         let create_python_code = move |variable_name: &str| -> String {
             [
@@ -149,15 +167,7 @@ impl BlenderCsgObj {
                 format!("  mod.object = {}", b_name),
                 format!("  mod.operation = '{}'", operation),
                 format!("  bpy.ops.object.modifier_apply(modifier=mod.name)"),
-                format!(
-                    "  {}bpy.context.scene.collection.objects.unlink({})",
-                    if let Ok(_) = env::var("DEBUG") {
-                        "#"
-                    } else {
-                        ""
-                    },
-                    b_name
-                ),
+                format!("  bpy.context.scene.collection.objects.unlink({})", b_name),
                 format!("  return {}", a_name),
                 format!("{} = {}()", variable_name, fn_name),
             ]

@@ -75,7 +75,7 @@ impl Polygon {
             let dst = points[(i + 1) % points.len()];
             edges.push(Edge { src, dst });
         }
-        let normal = edges[0].vector().cross(&edges[1].vector()).normalized();
+        let normal = edges[1].vector().cross(&edges[0].vector()).normalized();
         let (mut cx, mut cy, mut cz) = (0.0, 0.0, 0.0);
         for pt in &points {
             cx += pt.x;
