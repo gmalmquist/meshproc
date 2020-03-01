@@ -688,6 +688,42 @@ impl ops::Sub<Pt3> for Pt3 {
     }
 }
 
+impl ops::Sub<&Pt3> for Pt3 {
+    type Output = Vec3;
+
+    fn sub(self, rhs: &Pt3) -> Vec3 {
+        return Vec3 {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        };
+    }
+}
+
+impl ops::Sub<&Pt3> for &Pt3 {
+    type Output = Vec3;
+
+    fn sub(self, rhs: &Pt3) -> Vec3 {
+        return Vec3 {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        };
+    }
+}
+
+impl ops::Sub<Pt3> for &Pt3 {
+    type Output = Vec3;
+
+    fn sub(self, rhs: Pt3) -> Vec3 {
+        return Vec3 {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        };
+    }
+}
+
 // Scaling
 impl ops::Mul<f64> for Vec3 {
     type Output = Vec3;
