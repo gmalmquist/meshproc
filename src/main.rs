@@ -87,7 +87,7 @@ fn cube_normal_test() {
 fn generate_internal_pillars(mesh: Arc<Mesh>) -> Vec<geom::Cube> {
     let mut pillars = vec![];
 
-    let resolution = 8.;
+    let resolution = 12.;
     let clearance = 1.0;
     let cell_width = resolution - clearance;
 
@@ -176,16 +176,20 @@ fn generate_pillar(
         for face in &cube.faces {
             for point in face.points(ray_spacing) {
                 let hit = mesh.raycast(&Ray3::new(point.clone(), face.normal));
-                if let Some(hit) = hit {
+                let hit_height = if let Some(hit) = hit {
                     if hit.distance >= clearance {
                         continue; // This is fine.
                     }
-                    let hit_height = hit.point.z - base_z;
-                    if lowest_tangent_collision.is_none()
-                        || lowest_tangent_collision.unwrap() > hit_height
-                    {
-                        lowest_tangent_collision = Some(hit_height);
-                    }
+                    hit.point.z - base_z
+                } else {
+                    // If we didn't hit anything, we're outside the mesh! This is just as bad as
+                    // hitting something too close.
+                    point.z - base_z
+                };
+                if lowest_tangent_collision.is_none()
+                    || lowest_tangent_collision.unwrap() > hit_height
+                {
+                    lowest_tangent_collision = Some(hit_height);
                 }
             }
         }
