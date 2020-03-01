@@ -253,8 +253,8 @@ impl Edge {
 pub struct Cube {
     pub center: Pt3,
     pub dimensions: Vec3,
-    vertices: Vec<Pt3>,
-    faces: Vec<Polygon>,
+    pub vertices: Vec<Pt3>,
+    pub faces: Vec<Polygon>,
 }
 
 impl Cube {

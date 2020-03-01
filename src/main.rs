@@ -1,7 +1,12 @@
 use std::env;
 use std::fs;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
 
+use futures::executor;
 use futures::io::{Error, ErrorKind};
+
+use futures::task::{Spawn, SpawnExt};
 use meshproc::csg::{CsgObj, ToCsg};
 use meshproc::geom::{Cube, Mesh, Polygon, Shape};
 use meshproc::load_mesh_stl;
@@ -9,7 +14,6 @@ use meshproc::scad::{StlImport, ToScad};
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
 use meshproc::{csg, geom, scad, threed};
-use std::io::Write;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -41,7 +45,8 @@ fn main() {
     println!("Bounds: {} to {}", bounds.0, bounds.1);
 
     let mut csg = mesh.to_csg();
-    for pillar in generate_internal_pillars(&mesh) {
+    let mesh = Arc::new(mesh);
+    for pillar in generate_internal_pillars(Arc::clone(&mesh)) {
         csg = csg.difference(&pillar.to_csg());
     }
 
@@ -55,7 +60,7 @@ fn main() {
         }
     }
 }
-fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
+fn generate_internal_pillars(mesh: Arc<Mesh>) -> Vec<geom::Cube> {
     let mut pillars = vec![];
 
     let resolution = 5.;
@@ -64,7 +69,9 @@ fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
 
     let (mind, maxd) = &mesh.bounds;
 
-
+    let mut futures = vec![];
+    let threadpool =
+        executor::ThreadPool::new().expect("Unable to create thread pool for pillar generation!");
 
     for x in FloatRange::from_step_size(
         mind.x + clearance,
@@ -76,16 +83,25 @@ fn generate_internal_pillars(mesh: &Mesh) -> Vec<geom::Cube> {
             maxd.y - cell_width - clearance,
             resolution,
         ) {
-            print!("Generating pillar {} x {}              \r", x, y);
-            std::io::stdout().flush();
-            let pillar = generate_pillar(x, y, cell_width, &mesh, clearance);
-            if let Some(pillar) = pillar {
-                pillars.push(pillar);
+            let mesh = Arc::clone(&mesh);
+            let pillar_future = threadpool.spawn_with_handle(async move {
+                print!("Generating pillar {} x {}              \r", x, y);
+                std::io::stdout().flush();
+                generate_pillar(x, y, cell_width, &mesh, clearance)
+            });
+            if let Ok(pillar_future) = pillar_future {
+                futures.push(pillar_future);
             }
         }
     }
-    println!("\nGenerated {} pillars.", pillars.len());
 
+    for pillar_future in futures {
+        if let Some(pillar) = futures::executor::block_on(pillar_future) {
+            pillars.push(pillar);
+        }
+    }
+
+    println!("\nGenerated {} pillars.", pillars.len());
     pillars
 }
 
@@ -100,7 +116,7 @@ fn generate_pillar(
 
     let base_z = mind.z + clearance;
 
-    let mut top_face = Polygon::new(vec![
+    let bottom_face = Polygon::new(vec![
         Pt3::new(base_x, base_y, base_z),
         Pt3::new(base_x + side, base_y, base_z),
         Pt3::new(base_x + side, base_y + side, base_z),
@@ -108,7 +124,7 @@ fn generate_pillar(
     ]);
 
     let mut height: Option<f64> = None;
-    for pt in top_face.points(1.) {
+    for pt in bottom_face.points(1.) {
         let hit = mesh.raycast(&Ray3::new(pt, Vec3::up()));
         if let Some(hit) = hit {
             if height.is_none() || height.unwrap() > hit.distance {
@@ -125,11 +141,24 @@ fn generate_pillar(
             return None;
         }
 
-        return Some(Cube::new(
+        let cube = Cube::new(
             Pt3::new(base_x, base_y, base_z),
             Vec3::new(side, side, height),
             false,
-        ));
+        );
+
+        for face in &cube.faces {
+            for point in &face.points {
+                let hit = mesh.raycast(&Ray3::new(point.clone(), face.normal));
+                if let Some(hit) = hit {
+                    if hit.distance < clearance {
+                        return None;
+                    }
+                }
+            }
+        }
+
+        return Some(cube);
     }
     None
 }
