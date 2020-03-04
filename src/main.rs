@@ -66,6 +66,10 @@ fn main() {
     }
 }
 
+fn generate_plateau_supports() {
+
+}
+
 fn cube_normal_test() {
     let cube = geom::Cube::new(Pt3::zero(), Vec3::new(10., 10., 10.), true);
 

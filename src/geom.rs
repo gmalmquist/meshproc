@@ -54,9 +54,94 @@ impl Shape for Plane {
     }
 }
 
+pub trait HasVertices {
+    fn vertex(&self, index: usize) -> &Pt3;
+    fn vertex_count(&self) -> usize;
+    fn edges(&self) -> FaceEdgeIter;
+
+    fn normal(&self) -> Vec3 {
+        let edge_one = self.vertex(1) - self.vertex(0);
+        let edge_two = self.vertex(2) - self.vertex(1);
+        edge_two.cross(&edge_one).normalized()
+    }
+
+    fn centroid(&self) -> Pt3 {
+        let mut sum = (0., 0., 0.);
+        let count = self.vertex_count();
+        for i in 0..count {
+            let v = self.vertex(i);
+            sum.0 += v.x;
+            sum.1 += v.y;
+            sum.2 += v.z;
+        }
+        sum.0 /= count as f64;
+        sum.1 /= count as f64;
+        sum.2 /= count as f64;
+        Pt3::from_tuple(sum)
+    }
+}
+
+pub struct Face<'a> {
+    pub vertices: Vec<&'a Pt3>,
+}
+
+impl<'a> Face<'a> {
+    pub fn new(vertices: Vec<&'a Pt3>) -> Self {
+        if vertices.len() < 3 {
+            panic!("Cannot create a face with less than three vertices!");
+        }
+        Self {
+            vertices,
+        }
+    }
+}
+
+impl<'a> HasVertices for Face<'a> {
+    fn vertex(&self, index: usize) -> &Pt3 {
+        self.vertices[index]
+    }
+
+    fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+
+    fn edges(&self) -> FaceEdgeIter {
+        FaceEdgeIter::new(self)
+    }
+}
+
+pub struct FaceEdgeIter<'a> {
+    face: &'a dyn HasVertices,
+    edge_index: usize,
+}
+
+impl<'a> FaceEdgeIter<'a> {
+    pub fn new(face: &'a dyn HasVertices) -> Self {
+        Self {
+            face,
+            edge_index: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for FaceEdgeIter<'a> {
+    type Item = Edge<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.edge_index >= self.face.vertex_count() {
+            return None;
+        }
+        let i = self.edge_index;
+        self.edge_index += 1;
+        Some(Edge {
+            src: self.face.vertex(i),
+            dst: self.face.vertex((i + 1) % self.face.vertex_count()),
+        })
+    }
+}
+
 pub struct Polygon {
     pub points: Vec<Pt3>,
-    pub edges: Vec<Edge>,
     pub normal: Vec3,
     pub centroid: Pt3,
 }
@@ -69,26 +154,11 @@ impl Polygon {
                 points.len()
             );
         }
-        let mut edges = Vec::new();
-        for (i, pt) in points.iter().enumerate() {
-            let src = pt.clone();
-            let dst = points[(i + 1) % points.len()];
-            edges.push(Edge { src, dst });
-        }
-        let normal = edges[1].vector().cross(&edges[0].vector()).normalized();
-        let (mut cx, mut cy, mut cz) = (0.0, 0.0, 0.0);
-        for pt in &points {
-            cx += pt.x;
-            cy += pt.y;
-            cz += pt.z;
-        }
-        cx /= points.len() as f64;
-        cy /= points.len() as f64;
-        cz /= points.len() as f64;
-        let centroid = Pt3::new(cx, cy, cz);
+        let face = Face::new(points.iter().collect());
+        let normal = face.normal();
+        let centroid = face.centroid();
         Self {
             points,
-            edges,
             normal,
             centroid,
         }
@@ -99,7 +169,7 @@ impl Polygon {
     }
 
     pub fn contains(&self, pt: Pt3) -> bool {
-        for edge in &self.edges {
+        for edge in self.edges() {
             let v = edge.vector();
             let edge_normal = v ^ self.normal;
             let pt_side = edge_normal * (pt - edge.src) >= 0.0;
@@ -147,6 +217,20 @@ impl Polygon {
             index: 0,
             resolution,
         }
+    }
+}
+
+impl HasVertices for Polygon {
+    fn vertex(&self, index: usize) -> &Pt3 {
+        &self.points[index]
+    }
+
+    fn vertex_count(&self) -> usize {
+        self.points.len()
+    }
+
+    fn edges(&self) -> FaceEdgeIter {
+        FaceEdgeIter::new(self)
     }
 }
 
@@ -208,7 +292,7 @@ impl Shape for Polygon {
         // If we're outside the bounds of the polygon, our distance to it is the closest distance
         // to any of its edges.
         let mut distance = 0.0;
-        for edge in &self.edges {
+        for edge in self.edges() {
             let edge_distance = edge.distance(pt);
             if edge_distance < distance {
                 distance = edge_distance;
@@ -219,18 +303,18 @@ impl Shape for Polygon {
     }
 }
 
-pub struct Edge {
-    pub src: Pt3,
-    pub dst: Pt3,
+pub struct Edge<'a> {
+    pub src: &'a Pt3,
+    pub dst: &'a Pt3,
 }
 
-impl Edge {
+impl<'a> Edge<'a> {
     pub fn vector(&self) -> Vec3 {
         return self.dst - self.src;
     }
 
     pub fn distance(&self, pt: Pt3) -> f64 {
-        let frame = Frame3::new(self.src, Basis3::new1(self.vector()));
+        let frame = Frame3::new(self.src.clone(), Basis3::new1(self.vector()));
         let mut local = frame.project(&pt);
         if local.i > 0.0 && local.i < 1.0 {
             // Closest point is on the interior of the edge, so return the distance from that.
