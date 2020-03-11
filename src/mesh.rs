@@ -1,6 +1,7 @@
-use crate::threed::{Pt3, Vec3};
+use crate::threed::{Pt3, Vec3, Ray3};
 use crate::geom;
-use crate::geom::HasVertices;
+use crate::geom::{HasVertices, Shape};
+use std::f64::INFINITY;
 
 pub struct Mesh {
     pub vertices: Vec<Pt3>,
@@ -130,12 +131,64 @@ impl Mesh {
     }
 }
 
+impl geom::Shape for Mesh {
+    fn raycast(&self, ray: &Ray3) -> Option<geom::RaycastHit> {
+        let mut closest_hit: Option<geom::RaycastHit> = None;
+        for poly in self.faces() {
+            let poly_hit = poly.raycast(ray);
+            if let Some(poly_hit) = poly_hit {
+                closest_hit = match closest_hit {
+                    None => Some(poly_hit),
+                    Some(closest_hit) => {
+                        if closest_hit.distance < poly_hit.distance {
+                            Some(closest_hit)
+                        } else {
+                            Some(poly_hit)
+                        }
+                    }
+                };
+            }
+        }
+        closest_hit
+    }
+
+    fn signed_distance(&self, pt: Pt3) -> f64 {
+        let mut distance = INFINITY;
+        for poly in self.faces() {
+            let dist = poly.signed_distance(pt);
+            if dist < distance {
+                distance = dist;
+            }
+        }
+        distance
+    }
+}
+
 pub struct MeshFace<'m> {
     mesh: &'m Mesh,
     index: usize,
 }
 
-impl<'a> MeshFace<'a> {}
+impl<'a> MeshFace<'a> {
+    pub fn plane(&self) -> geom::Plane {
+        geom::Plane::new(self.centroid(), self.normal())
+    }
+
+    pub fn contains(&self, pt: Pt3) -> bool {
+        let normal = self.normal();
+        let centroid = self.centroid();
+        for edge in self.edges() {
+            let v = edge.vector();
+            let edge_normal = v ^ normal;
+            let pt_side = edge_normal * (pt - edge.src) >= 0.0;
+            let centroid_side = edge_normal * (centroid - edge.src) >= 0.0;
+            if pt_side != centroid_side {
+                return false;
+            }
+        }
+        true
+    }
+}
 
 impl<'a> geom::HasVertices for MeshFace<'a> {
     fn vertex(&self, index: usize) -> &Pt3 {
@@ -171,5 +224,49 @@ impl<'a> Iterator for MeshFaceIter<'a> {
         let next = self.mesh.face(self.index);
         self.index += 1;
         next
+    }
+}
+
+impl<'a> geom::Shape for MeshFace<'a> {
+    fn raycast(&self, ray: &Ray3) -> Option<geom::RaycastHit> {
+        let hit_on_plane = self.plane().raycast(ray);
+        return match hit_on_plane {
+            Some(hit) => {
+                if self.contains(hit.point) {
+                    Some(hit)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+    }
+
+    fn signed_distance(&self, pt: Pt3) -> f64 {
+        let plane = self.plane();
+        let sign = if plane.normal * (pt - plane.origin) >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
+
+        // If the projection of the point onto the plane of this polygon is contained within the
+        // boundaries of this polygon, that projection will be the closest point.
+        let projection = self.plane().project(pt);
+        if self.contains(projection) {
+            return sign * (projection - pt).mag();
+        }
+
+        // If we're outside the bounds of the polygon, our distance to it is the closest distance
+        // to any of its edges.
+        let mut distance = 0.0;
+        for edge in self.edges() {
+            let edge_distance = edge.distance(pt);
+            if edge_distance < distance {
+                distance = edge_distance;
+            }
+        }
+
+        distance * sign
     }
 }
