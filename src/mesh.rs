@@ -64,6 +64,18 @@ impl Mesh {
         MeshFaceIter { mesh: self, index: 0 }
     }
 
+    pub fn face_normal(&self, index: usize) -> Option<&Vec3> {
+        self.face_normals.get(index)
+    }
+
+    pub fn vertex_normal(&self, index: usize) -> Option<&Vec3> {
+        self.vertex_normals.get(index)
+    }
+
+    pub fn face_centroid(&self, index: usize) -> Option<&Pt3> {
+        self.face_centroids.get(index)
+    }
+
     pub fn recalculate_normals(&mut self) {
         self.face_normals.clear();
         for (index, lp) in self.face_loops.iter().enumerate() {
@@ -136,6 +148,14 @@ impl<'a> geom::HasVertices for MeshFace<'a> {
 
     fn edges(&self) -> geom::FaceEdgeIter {
         geom::FaceEdgeIter::new(self)
+    }
+
+    fn normal(&self) -> Vec3 {
+        self.mesh.face_normal(self.index).expect("Face normal wasn't calculated").clone()
+    }
+
+    fn centroid(&self) -> Pt3 {
+        self.mesh.face_centroid(self.index).expect("Face centroid wasn't calculated").clone()
     }
 }
 
