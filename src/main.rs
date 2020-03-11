@@ -1,19 +1,18 @@
 use std::env;
 use std::fs;
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use futures::executor;
 use futures::io::{Error, ErrorKind};
+use futures::task::SpawnExt;
 
-use futures::task::{Spawn, SpawnExt};
+use meshproc::{geom, threed};
 use meshproc::csg::{CsgObj, ToCsg};
 use meshproc::geom::{Cube, Mesh, Polygon, Shape};
 use meshproc::load_mesh_stl;
-use meshproc::scad::{StlImport, ToScad};
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
-use meshproc::{csg, geom, scad, threed};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -85,7 +84,7 @@ fn cube_normal_test() {
         }
     }
 
-    csg.render_stl("test-normals.stl");
+    csg.render_stl("test-normals.stl").expect("Expected test normals to render.");
 }
 
 fn generate_internal_pillars(mesh: Arc<Mesh>) -> Vec<geom::Cube> {
@@ -114,8 +113,8 @@ fn generate_internal_pillars(mesh: Arc<Mesh>) -> Vec<geom::Cube> {
         ) {
             let mesh = Arc::clone(&mesh);
             let pillar_future = threadpool.spawn_with_handle(async move {
-                print!("Generating pillar {} x {}              \r", x, y);
-                std::io::stdout().flush();
+                eprint!("Generating pillar {} x {}              \r", x, y);
+                std::io::stderr().flush().unwrap();
                 generate_pillar(x, y, cell_width, &mesh, clearance)
             });
             if let Ok(pillar_future) = pillar_future {
@@ -142,7 +141,7 @@ fn generate_pillar(
     clearance: f64,
 ) -> Option<geom::Cube> {
     let ray_spacing = 1.0;
-    let (mind, maxd) = &mesh.bounds;
+    let (mind, _maxd) = &mesh.bounds;
     let base_z = mind.z + clearance;
 
     let bottom_face = Polygon::new(vec![
@@ -163,7 +162,7 @@ fn generate_pillar(
     }
 
     if let Some(height) = height {
-        let mut height = height - clearance;
+        let height = height - clearance;
         if height < clearance {
             // NB: We use the clearance as the minimum valid height, which seems reasonable
             // but may not be obvious.
@@ -222,9 +221,9 @@ fn csg_test() {
 
     let csg = cube.to_csg().union(&sphere.to_csg());
     match csg.render_stl("test2.stl") {
-        Ok(output) => {}
+        Ok(_output) => {}
         Err(e) => {
-            println!("Error: {:#?}", e);
+            eprintln!("Error: {:#?}", e);
             std::process::exit(1);
         }
     }

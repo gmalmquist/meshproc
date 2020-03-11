@@ -3,9 +3,9 @@ use crate::threed::{Pt3, Vec3};
 use std::collections::HashMap;
 use std::env;
 use std::ffi::OsStr;
-use std::fmt::Display;
+
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{Write};
 use std::ops::Add;
 use std::process::Command;
 use tempfile;
@@ -99,7 +99,7 @@ impl ScadCode {
 
         // Copy all imported meshes into the tempdir with their appropriate short names.
         for (key, path) in self.imported_files.iter() {
-            fs::copy(path, tempdir.path().join(key));
+            fs::copy(path, tempdir.path().join(key)).unwrap();
         }
 
         println!(

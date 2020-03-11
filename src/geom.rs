@@ -1,5 +1,5 @@
 use crate::scalar::FloatRange;
-use crate::threed::{Basis3, Frame3, LocalPoint, Pt3, Ray3, Vec3};
+use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
 use std::f64::INFINITY;
 
 pub trait Shape {
@@ -215,7 +215,6 @@ impl Polygon {
             i_values,
             j_values,
             index: 0,
-            resolution,
         }
     }
 }
@@ -235,12 +234,11 @@ impl HasVertices for Polygon {
 }
 
 pub struct FacePointIter<'a> {
-    polygon: &'a Polygon,
+        polygon: &'a Polygon,
     frame: Frame3,
     i_values: Vec<f64>,
     j_values: Vec<f64>,
     index: usize,
-    resolution: f64,
 }
 
 impl<'a> Iterator for FacePointIter<'a> {
@@ -343,7 +341,7 @@ pub struct Cube {
 
 impl Cube {
     pub fn new(origin: Pt3, dimensions: Vec3, centered: bool) -> Cube {
-        let mut center: Pt3 = if centered {
+        let center: Pt3 = if centered {
             origin
         } else {
             origin + dimensions / 2.0
