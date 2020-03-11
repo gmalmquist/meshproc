@@ -6,6 +6,7 @@ pub mod geom;
 pub mod scad;
 pub mod scalar;
 pub mod threed;
+pub mod mesh;
 
 use crate::geom::{Mesh, Polygon};
 use crate::threed::{Pt3, Vec3};
