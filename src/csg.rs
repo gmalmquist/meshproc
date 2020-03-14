@@ -257,7 +257,7 @@ impl CsgObj for BlenderCsgObj {
                 .as_bytes(),
         )?;
 
-        println!(
+        eprintln!(
             "Running blender with script {}",
             &script_path.to_str().unwrap()
         );
@@ -269,21 +269,21 @@ impl CsgObj for BlenderCsgObj {
                 let stdout = String::from_utf8(output.stdout).unwrap_or(String::from("n/a"));
                 let stderr = String::from_utf8(output.stderr).unwrap_or(String::from("n/a"));
                 if output.status.success() {
-                    println!(
+                    eprintln!(
                         "Blender exited with status {}.",
                         output.status.code().unwrap_or(-1)
                     );
-                    println!("Blender stdout: \n{}", indent(&stdout, 2));
-                    println!("Blender stderr: \n{}", indent(&stderr, 2));
+                    eprintln!("Blender stdout: \n{}", indent(&stdout, 2));
+                    eprintln!("Blender stderr: \n{}", indent(&stderr, 2));
                     let save_script = stderr.trim().len() > 0 || env::var("DEBUG").is_ok();
                     if save_script {
                         if let Ok(script) = std::fs::read(script_path) {
                             if let Ok(_) = std::fs::write("debug.py", script) {
-                                println!("Dumped blender script to debug.py for investigation.");
+                                eprintln!("Dumped blender script to debug.py for investigation.");
                             }
                         }
                         if stderr.trim().len() > 0 {
-                            println!("Since stderr isn't empty, script may have been invalid.");
+                            eprintln!("Since stderr isn't empty, script may have been invalid.");
                             return Err(io::Error::new(ErrorKind::InvalidInput, stderr))
                         }
                     }

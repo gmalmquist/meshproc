@@ -5,7 +5,7 @@ use std::io::Write;
 use byteorder::{WriteBytesExt, LittleEndian};
 
 use crate::geom;
-use crate::geom::{HasVertices};
+use crate::geom::HasVertices;
 use crate::threed::{Pt3, Ray3, Vec3, Frame3, Basis3};
 use crate::scalar::FloatRange;
 
@@ -262,26 +262,34 @@ impl Mesh {
         // endfacet
         // endsolid name
 
-        writeln!(writer, "solid meshproc");
+        writeln!(writer, "solid meshproc\r");
 
         let sc = |f: f64| -> String {
-            let s = format!("{:e}", f);
-            if s.ends_with("e0") {
-                return format!("{}", f);
-            }
+            let order = if f.abs() <= 0.00001 { 0 } else { f.abs().ln() as i64 };
+            let mantissa = if order == 0 { f } else { f / (order as f64).exp() };
+            let order_sign = if order >= 0 { "+" } else { "-" };
+            let s = format!("{:.5}E{}{:03.}", mantissa, order_sign, order.abs());
             s
         };
 
+        // STL vertex coordinates may not be negative. We shift it over so that the minimum coord
+        // is (1, 1, 1), to be safe. Theoretically (0, 0, 0) would work, but I don't trust floating
+        // point arithmetic to be that precise.
+        let offset = Pt3::new(1., 1., 1.) - self.bounds.0;
+
         let write_triangle = |writer: &mut dyn io::Write, normal: &Vec3, vertices: &Vec<&Pt3>| {
-            writeln!(writer, "facet normal {} {} {}", sc(normal.x), sc(normal.y), sc(normal.z));
+            assert_eq!(3, vertices.len());
 
-            writeln!(writer, "  outer loop");
+            writeln!(writer, "  facet normal {} {} {}\r", sc(normal.x), sc(normal.y), sc(normal.z));
+
+            writeln!(writer, "    outer loop\r");
             for point in vertices {
-                writeln!(writer, "    vertex {} {} {}", sc(point.x), sc(point.y), sc(point.z));
+                let point = **point + offset;
+                writeln!(writer, "      vertex {} {} {}\r", sc(point.x), sc(point.y), sc(point.z));
             }
-            writeln!(writer, "  endloop");
+            writeln!(writer, "    endloop\r");
 
-            writeln!(writer, "endfacet");
+            writeln!(writer, "  endfacet\r");
         };
 
         for (face_index, face) in self.face_loops.iter().enumerate() {
@@ -300,7 +308,7 @@ impl Mesh {
                 write_triangle(writer, normal, &face[0..3].iter()
                     .map(|&i| &self.vertices[i])
                     .collect());
-                write_triangle(writer, normal, &[face[3], face[3], face[1], face[2]].iter()
+                write_triangle(writer, normal, &[face[3], face[0], face[2]].iter()
                     .map(|&i| &self.vertices[i])
                     .collect());
                 continue;
@@ -318,7 +326,7 @@ impl Mesh {
             }
         }
 
-        writeln!(writer, "endsolid meshproc");
+        writeln!(writer, "endsolid meshproc\r");
 
         Ok(())
     }
