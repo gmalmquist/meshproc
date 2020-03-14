@@ -11,6 +11,7 @@ use tempfile;
 use uuid;
 
 use crate::geom;
+use crate::mesh;
 
 
 pub trait CsgObj {
@@ -41,7 +42,7 @@ impl ToCsg<BlenderCsgObj> for geom::Sphere {
     }
 }
 
-impl ToCsg<BlenderCsgObj> for geom::Mesh {
+impl ToCsg<BlenderCsgObj> for mesh::Mesh {
     fn to_csg(&self) -> BlenderCsgObj {
         BlenderCsgObj::mesh(&self)
     }
@@ -107,8 +108,9 @@ impl BlenderCsgObj {
         };
     }
 
-    pub fn mesh(mesh: &geom::Mesh) -> Self {
-        Self::stl(&mesh.file)
+    pub fn mesh(mesh: &mesh::Mesh) -> Self {
+        Self::stl(&mesh.source_file
+            .expect("Cannot perform operations on a mesh without a source STL."))
     }
 
     pub fn stl(path: &str) -> Self {

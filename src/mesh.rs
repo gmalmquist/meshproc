@@ -1,4 +1,5 @@
 use std::f64::INFINITY;
+use std::io;
 
 use crate::geom;
 use crate::geom::HasVertices;
@@ -7,13 +8,14 @@ use crate::threed::{Pt3, Ray3, Vec3};
 pub struct Mesh {
     pub vertices: Vec<Pt3>,
     pub face_loops: Vec<Vec<usize>>,
+    pub source_file: Option<String>,
     face_normals: Vec<Vec3>,
     face_centroids: Vec<Pt3>,
     vertex_normals: Vec<Vec3>,
 }
 
 impl Mesh {
-    pub fn new(vertices: Vec<Pt3>, face_loops: Vec<Vec<usize>>) -> Self {
+    pub fn new(vertices: Vec<Pt3>, face_loops: Vec<Vec<usize>>, source_file: Option<String>) -> Self {
         let mut new_loops = vec![];
         for (loop_index, lp) in face_loops.into_iter().enumerate() {
             if lp.len() < 3 {
@@ -38,6 +40,7 @@ impl Mesh {
         let mut mesh = Self {
             vertices,
             face_loops: new_loops,
+            source_file,
             face_normals: vec![],
             face_centroids: vec![],
             vertex_normals: vec![],
@@ -129,6 +132,43 @@ impl Mesh {
         self.recalculate_centroids();
         self.recalculate_normals();
         self.recalculate_vertex_normals();
+    }
+
+    pub fn write_stl(&self, writer: &mut Box<dyn io::Write>) {
+        // UINT8[80] – Header
+        // UINT32 – Number of triangles
+        //
+        //
+        // foreach triangle
+        // REAL32[3] – Normal vector
+        // REAL32[3] – Vertex 1
+        // REAL32[3] – Vertex 2
+        // REAL32[3] – Vertex 3
+        // UINT16 – Attribute byte count
+        // end
+
+        let mut triangle_count = 0;
+        for face in &self.face_loops {
+            if face.len() > 2 {
+                panic!("Mesh should never contain faces with fewer than 3 vertices.");
+            }
+            if face.len() == 3 {
+                // 3 vertices make a single triangle.
+                triangle_count += 1;
+                continue;
+            }
+            if face.len() == 4 {
+                // turn quads into two triangles.
+                triangle_count += 2;
+                continue;
+            }
+            // Create a pinwheel of triangles equal to the number of vertices.
+            triangle_count += face.len();
+        }
+
+        let header: [u8; 80] = [0; 80];
+        writer.write(&header);
+        writer.write_u32(self.face_loops.len())
     }
 }
 

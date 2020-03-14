@@ -265,6 +265,23 @@ impl Pt3 {
         }
         total
     }
+
+    pub fn centroid(pts: &Vec<&Pt3>) -> Pt3 {
+        if pts.is_empty() {
+            return Pt3::zero();
+        }
+        let mut centroid = Self::zero();
+        for pt in pts {
+            centroid.x += pt.x;
+            centroid.y += pt.y;
+            centroid.z += pt.z;
+        }
+        let size = pts.len() as f64;
+        centroid.x /= size;
+        centroid.y /= size;
+        centroid.z /= size;
+        centroid
+    }
 }
 
 impl ScaledPt3 {
