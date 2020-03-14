@@ -160,7 +160,7 @@ impl Mesh {
         self.recalculate_vertex_normals();
     }
 
-    pub fn write_stl(&self, writer: &mut dyn io::Write) -> io::Result<()> {
+    pub fn write_stl_binary(&self, writer: &mut dyn io::Write) -> io::Result<()> {
         // UINT8[80] – Header
         // UINT32 – Number of triangles
         //
@@ -197,6 +197,8 @@ impl Mesh {
         writer.write_u32::<LittleEndian>(triangle_count as u32);
 
         let write_triangle = |writer: &mut dyn io::Write, normal: &Vec3, vertices: &Vec<&Pt3>| {
+            eprintln!("write_triangle");
+            eprintln!("normal = {:#?} {:#?} {:#?}", normal.x, normal.y, normal.z);
             writer.write_f32::<LittleEndian>(normal.x as f32);
             writer.write_f32::<LittleEndian>(normal.y as f32);
             writer.write_f32::<LittleEndian>(normal.z as f32);
@@ -205,7 +207,9 @@ impl Mesh {
                 writer.write_f32::<LittleEndian>(point.x as f32);
                 writer.write_f32::<LittleEndian>(point.y as f32);
                 writer.write_f32::<LittleEndian>(point.z as f32);
+                eprintln!("v {:#?} {:#?} {:#?}", point.x, point.y, point.z);
             }
+            eprintln!();
 
             writer.write_u16::<LittleEndian>(0); // Attribute count, which most tools expect to be 0.
         };
@@ -242,8 +246,79 @@ impl Mesh {
                 let c = &centroid;
                 write_triangle(writer, normal, &vec![a, b, c]);
             }
-            continue;
         }
+
+        Ok(())
+    }
+
+    pub fn write_stl(&self, writer: &mut dyn io::Write) -> io::Result<()> {
+        // solid name
+        // facet normal ni nj nk
+        //     outer loop
+        //         vertex v1x v1y v1z
+        //         vertex v2x v2y v2z
+        //         vertex v3x v3y v3z
+        //     endloop
+        // endfacet
+        // endsolid name
+
+        writeln!(writer, "solid meshproc");
+
+        let sc = |f: f64| -> String {
+            let s = format!("{:e}", f);
+            if s.ends_with("e0") {
+                return format!("{}", f);
+            }
+            s
+        };
+
+        let write_triangle = |writer: &mut dyn io::Write, normal: &Vec3, vertices: &Vec<&Pt3>| {
+            writeln!(writer, "facet normal {} {} {}", sc(normal.x), sc(normal.y), sc(normal.z));
+
+            writeln!(writer, "  outer loop");
+            for point in vertices {
+                writeln!(writer, "    vertex {} {} {}", sc(point.x), sc(point.y), sc(point.z));
+            }
+            writeln!(writer, "  endloop");
+
+            writeln!(writer, "endfacet");
+        };
+
+        for (face_index, face) in self.face_loops.iter().enumerate() {
+            let normal = self.face_normal(face_index).expect("Normals are required.");
+
+            if face.len() == 3 {
+                // Simple triangle.
+                write_triangle(writer, normal, &face.iter()
+                    .map(|&i| &self.vertices[i])
+                    .collect());
+                continue;
+            }
+
+            if face.len() == 4 {
+                // Make two triangles from the quad.
+                write_triangle(writer, normal, &face[0..3].iter()
+                    .map(|&i| &self.vertices[i])
+                    .collect());
+                write_triangle(writer, normal, &[face[3], face[3], face[1], face[2]].iter()
+                    .map(|&i| &self.vertices[i])
+                    .collect());
+                continue;
+            }
+
+            // Triangulate with a pinwheel.
+            let pts: Vec<&Pt3> = face.iter().map(|&i| &self.vertices[i]).collect();
+            let centroid = Pt3::centroid(&pts);
+
+            for i in 0..pts.len() {
+                let a = pts[i];
+                let b = pts[(i + 1) % pts.len()];
+                let c = &centroid;
+                write_triangle(writer, normal, &vec![a, b, c]);
+            }
+        }
+
+        writeln!(writer, "endsolid meshproc");
 
         Ok(())
     }
