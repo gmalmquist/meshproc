@@ -109,7 +109,7 @@ impl BlenderCsgObj {
     }
 
     pub fn mesh(mesh: &mesh::Mesh) -> Self {
-        Self::stl(&mesh.source_file
+        Self::stl(&mesh.source_file.clone()
             .expect("Cannot perform operations on a mesh without a source STL."))
     }
 

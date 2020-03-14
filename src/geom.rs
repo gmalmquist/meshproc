@@ -1,6 +1,6 @@
 use crate::scalar::FloatRange;
 use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
-use crate::mesh::Mesh;
+use crate::mesh::{Mesh, MeshFaceIter, MeshFace};
 use std::f64::INFINITY;
 
 pub trait Shape {
@@ -135,91 +135,43 @@ impl<'a> Iterator for FaceEdgeIter<'a> {
 }
 
 pub struct Polygon {
-    pub points: Vec<Pt3>,
-    pub normal: Vec3,
-    pub centroid: Pt3,
+    mesh: Mesh,
 }
 
 impl Polygon {
     pub fn new(points: Vec<Pt3>) -> Self {
-        if points.len() < 3 {
-            panic!(
-                "Not enough points for polygon (need at least 3, got {}).",
-                points.len()
-            );
-        }
-        let face = Face::new(points.iter().collect());
-        let normal = face.normal();
-        let centroid = face.centroid();
+        let loops = vec![(0..points.len()).collect()];
         Self {
-            points,
-            normal,
-            centroid,
+            mesh: Mesh::new(
+                points,
+                loops,
+                None,
+            )
         }
     }
 
     pub fn plane(&self) -> Plane {
-        return Plane::new(self.centroid, self.normal);
+        Plane::new(self.centroid(), self.normal())
     }
 
     pub fn contains(&self, pt: Pt3) -> bool {
-        for edge in self.edges() {
-            let v = edge.vector();
-            let edge_normal = v ^ self.normal;
-            let pt_side = edge_normal * (pt - edge.src) >= 0.0;
-            let centroid_side = edge_normal * (self.centroid - edge.src) >= 0.0;
-            if pt_side != centroid_side {
-                return false;
-            }
-        }
-        true
+        self.face().contains(pt)
     }
 
-    pub fn points<'a>(&'a self, resolution: f64) -> FacePointIter<'a> {
-        let basis = Basis3::from_normal(self.normal);
-        let frame = Frame3::new(self.centroid, basis);
-
-        let mut min = (None, None);
-        let mut max = (None, None);
-        for pt in &self.points {
-            let local = frame.project(pt);
-            if min.0.is_none() || min.0.unwrap() < local.i {
-                min.0 = Some(local.i);
-            }
-            if max.0.is_none() || max.0.unwrap() > local.i {
-                max.0 = Some(local.i);
-            }
-            if min.1.is_none() || min.1.unwrap() < local.j {
-                min.1 = Some(local.j);
-            }
-            if max.1.is_none() || max.1.unwrap() > local.j {
-                max.1 = Some(local.j);
-            }
-        }
-
-        let min = (min.0.unwrap(), min.1.unwrap());
-        let max = (max.0.unwrap(), max.1.unwrap());
-
-        let i_values = FloatRange::from_step_size(min.0, max.0, resolution).collect();
-        let j_values = FloatRange::from_step_size(min.1, max.1, resolution).collect();
-
-        FacePointIter {
-            polygon: &self,
-            frame,
-            i_values,
-            j_values,
-            index: 0,
-        }
+    pub fn face(&self) -> MeshFace {
+        self.mesh.face(0).unwrap()
     }
 }
 
 impl HasVertices for Polygon {
     fn vertex(&self, index: usize) -> &Pt3 {
-        &self.points[index]
+        // NB: This works because the mesh contains exactly one face, so the mesh vertex indices
+        // are the same as the face vertex indices.
+        self.mesh.vertex(index).unwrap()
     }
 
     fn vertex_count(&self) -> usize {
-        self.points.len()
+        self.face().vertex_count()
     }
 
     fn edges(&self) -> FaceEdgeIter {
@@ -227,71 +179,14 @@ impl HasVertices for Polygon {
     }
 }
 
-pub struct FacePointIter<'a> {
-    polygon: &'a Polygon,
-    frame: Frame3,
-    i_values: Vec<f64>,
-    j_values: Vec<f64>,
-    index: usize,
-}
-
-impl<'a> Iterator for FacePointIter<'a> {
-    type Item = Pt3;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let i_index = self.index / self.i_values.len();
-        let j_index = self.index % self.i_values.len();
-        self.index += 1;
-        if i_index >= self.i_values.len() || j_index >= self.j_values.len() {
-            return None;
-        }
-        let local = self
-            .frame
-            .local(self.i_values[i_index], self.j_values[j_index], 0.);
-        Some(self.frame.unproject(&local))
-    }
-}
 
 impl Shape for Polygon {
     fn raycast(&self, ray: &Ray3) -> Option<RaycastHit> {
-        let hit_on_plane = self.plane().raycast(ray);
-        return match hit_on_plane {
-            Some(hit) => {
-                if self.contains(hit.point) {
-                    Some(hit)
-                } else {
-                    None
-                }
-            }
-            None => None,
-        };
+        self.mesh.raycast(ray)
     }
 
     fn signed_distance(&self, pt: Pt3) -> f64 {
-        let sign = if self.normal * (pt - self.centroid) >= 0.0 {
-            1.0
-        } else {
-            -1.0
-        };
-
-        // If the projection of the point onto the plane of this polygon is contained within the
-        // boundaries of this polygon, that projection will be the closest point.
-        let projection = self.plane().project(pt);
-        if self.contains(projection) {
-            return sign * (projection - pt).mag();
-        }
-
-        // If we're outside the bounds of the polygon, our distance to it is the closest distance
-        // to any of its edges.
-        let mut distance = 0.0;
-        for edge in self.edges() {
-            let edge_distance = edge.distance(pt);
-            if edge_distance < distance {
-                distance = edge_distance;
-            }
-        }
-
-        distance * sign
+        self.face().signed_distance(pt)
     }
 }
 
@@ -374,6 +269,10 @@ impl Cube {
             dimensions,
             mesh,
         }
+    }
+
+    pub fn faces(&self) -> MeshFaceIter {
+        self.mesh.faces()
     }
 }
 
