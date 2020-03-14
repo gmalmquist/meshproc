@@ -117,7 +117,7 @@ impl BlenderCsgObj {
             create_python_code: Box::new(move |variable_name| {
                 let temp_stl_file = format!("{}.stl", random_id());
                 let mut code = vec![
-                    format!("with open(r'{}', 'w') as f:", temp_stl_file),
+                    format!("with open(r'{}', 'wb') as f:", temp_stl_file),
                     format!("  f.write(bytearray([{}]))", buffer.iter()
                         .map(|b| format!("{:#x}", b))
                         .collect::<Vec<_>>()
@@ -275,17 +275,19 @@ impl CsgObj for BlenderCsgObj {
                     );
                     println!("Blender stdout: \n{}", indent(&stdout, 2));
                     println!("Blender stderr: \n{}", indent(&stderr, 2));
-                    if stderr.trim().len() > 0 || env::var("DEBUG").is_ok() {
-                        println!("Since stderr isn't empty, script may have been invalid.");
+                    let save_script = stderr.trim().len() > 0 || env::var("DEBUG").is_ok();
+                    if save_script {
                         if let Ok(script) = std::fs::read(script_path) {
                             if let Ok(_) = std::fs::write("debug.py", script) {
                                 println!("Dumped blender script to debug.py for investigation.");
                             }
                         }
-                        Err(io::Error::new(ErrorKind::InvalidInput, stderr))
-                    } else {
-                        Ok(())
+                        if stderr.trim().len() > 0 {
+                            println!("Since stderr isn't empty, script may have been invalid.");
+                            return Err(io::Error::new(ErrorKind::InvalidInput, stderr))
+                        }
                     }
+                    Ok(())
                 } else {
                     Err(io::Error::new(
                         ErrorKind::Other,

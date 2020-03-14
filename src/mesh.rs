@@ -175,7 +175,7 @@ impl Mesh {
 
         let mut triangle_count = 0;
         for face in &self.face_loops {
-            if face.len() > 2 {
+            if face.len() < 3 {
                 panic!("Mesh should never contain faces with fewer than 3 vertices.");
             }
             if face.len() == 3 {

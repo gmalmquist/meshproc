@@ -22,12 +22,13 @@ fn main() {
         std::process::exit(1);
     }
 
-    if &args[0] == "cube-normal-test" {
-        cube_normal_test();
-        return;
+    match &args[0] as &str {
+        "cube-normal-test" => return cube_normal_test(),
+        "cube-mesh-test" => return cube_mesh_test(),
+        _ => {}
     }
 
-    let stl_path = &match get_path(&args[0]) {
+    let stl_path = &match get_path(&args[1]) {
         Ok(s) => s,
         Err(e) => {
             println!("Error canonicalizing path: {:#?}", e);
@@ -51,9 +52,23 @@ fn main() {
 
     let mut csg = mesh.to_csg();
     let mesh = Arc::new(mesh);
-    for pillar in generate_internal_pillars(Arc::clone(&mesh)) {
-        csg = csg.difference(&pillar.to_csg());
+
+
+    match &args[0] as &str {
+        "internal-pillars" => {
+            for pillar in generate_internal_pillars(Arc::clone(&mesh)) {
+                csg = csg.difference(&pillar.to_csg());
+            }
+        },
+        "roundtrip" => {
+            // no-op, we just leave it alone.
+        },
+        s => {
+            eprintln!("Unknown command {}", s);
+            return;
+        }
     }
+
 
     match csg.render_stl("test3.stl") {
         Ok(()) => {
@@ -86,6 +101,12 @@ fn cube_normal_test() {
     }
 
     csg.render_stl("test-normals.stl").expect("Expected test normals to render.");
+}
+
+fn cube_mesh_test() {
+    let cube = geom::Cube::new(Pt3::zero(), Vec3::new(10., 10., 10.), true);
+    let mut csg = cube.mesh.to_csg();
+    csg.render_stl("cube-mesh-test.stl").expect("Failed to render cube mesh stl.");
 }
 
 fn generate_internal_pillars(mesh: Arc<Mesh>) -> Vec<geom::Cube> {
