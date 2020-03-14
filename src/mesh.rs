@@ -8,6 +8,7 @@ use crate::geom;
 use crate::geom::HasVertices;
 use crate::threed::{Pt3, Ray3, Vec3, Frame3, Basis3};
 use crate::scalar::FloatRange;
+use std::cmp::max;
 
 pub struct Mesh {
     pub vertices: Vec<Pt3>,
@@ -160,7 +161,8 @@ impl Mesh {
         self.recalculate_vertex_normals();
     }
 
-    pub fn write_stl_binary(&self, writer: &mut dyn io::Write) -> io::Result<()> {
+    pub fn write_stl(&self, writer: &mut dyn io::Write) -> io::Result<()> {
+        // https://www.fabbers.com/tech/STL_Format
         // UINT8[80] – Header
         // UINT32 – Number of triangles
         //
@@ -172,6 +174,11 @@ impl Mesh {
         // REAL32[3] – Vertex 3
         // UINT16 – Attribute byte count
         // end
+        //
+        // Note that all triangle vertices must be in the positive octant.
+
+        // Offset to shift all vertices into the positive octant.
+        let offset = Pt3::zero() - self.bounds.0;
 
         let mut triangle_count = 0;
         for face in &self.face_loops {
@@ -197,99 +204,19 @@ impl Mesh {
         writer.write_u32::<LittleEndian>(triangle_count as u32);
 
         let write_triangle = |writer: &mut dyn io::Write, normal: &Vec3, vertices: &Vec<&Pt3>| {
-            eprintln!("write_triangle");
-            eprintln!("normal = {:#?} {:#?} {:#?}", normal.x, normal.y, normal.z);
             writer.write_f32::<LittleEndian>(normal.x as f32);
             writer.write_f32::<LittleEndian>(normal.y as f32);
             writer.write_f32::<LittleEndian>(normal.z as f32);
 
             for point in vertices {
-                writer.write_f32::<LittleEndian>(point.x as f32);
-                writer.write_f32::<LittleEndian>(point.y as f32);
-                writer.write_f32::<LittleEndian>(point.z as f32);
-                eprintln!("v {:#?} {:#?} {:#?}", point.x, point.y, point.z);
+                // Max with 0 is required, because with floats even after adding the offset there's
+                // a chance we'll get something silly like -0.0001 or -0.0.
+                writer.write_f32::<LittleEndian>((0.0_f64).max(offset.x + point.x) as f32);
+                writer.write_f32::<LittleEndian>((0.0_f64).max(offset.y + point.y) as     f32);
+                writer.write_f32::<LittleEndian>((0.0_f64).max(offset.z + point.z) as f32);
             }
-            eprintln!();
 
             writer.write_u16::<LittleEndian>(0); // Attribute count, which most tools expect to be 0.
-        };
-
-        for (face_index, face) in self.face_loops.iter().enumerate() {
-            let normal = self.face_normal(face_index).expect("Normals are required.");
-
-            if face.len() == 3 {
-                // Simple triangle.
-                write_triangle(writer, normal, &face.iter()
-                    .map(|&i| &self.vertices[i])
-                    .collect());
-                continue;
-            }
-
-            if face.len() == 4 {
-                // Make two triangles from the quad.
-                write_triangle(writer, normal, &face[0..3].iter()
-                    .map(|&i| &self.vertices[i])
-                    .collect());
-                write_triangle(writer, normal, &[face[3], face[3], face[1], face[2]].iter()
-                    .map(|&i| &self.vertices[i])
-                    .collect());
-                continue;
-            }
-
-            // Triangulate with a pinwheel.
-            let pts: Vec<&Pt3> = face.iter().map(|&i| &self.vertices[i]).collect();
-            let centroid = Pt3::centroid(&pts);
-
-            for i in 0..pts.len() {
-                let a = pts[i];
-                let b = pts[(i + 1) % pts.len()];
-                let c = &centroid;
-                write_triangle(writer, normal, &vec![a, b, c]);
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn write_stl(&self, writer: &mut dyn io::Write) -> io::Result<()> {
-        // solid name
-        // facet normal ni nj nk
-        //     outer loop
-        //         vertex v1x v1y v1z
-        //         vertex v2x v2y v2z
-        //         vertex v3x v3y v3z
-        //     endloop
-        // endfacet
-        // endsolid name
-
-        writeln!(writer, "solid meshproc\r");
-
-        let sc = |f: f64| -> String {
-            let order = if f.abs() <= 0.00001 { 0 } else { f.abs().ln() as i64 };
-            let mantissa = if order == 0 { f } else { f / (order as f64).exp() };
-            let order_sign = if order >= 0 { "+" } else { "-" };
-            let s = format!("{:.5}E{}{:03.}", mantissa, order_sign, order.abs());
-            s
-        };
-
-        // STL vertex coordinates may not be negative. We shift it over so that the minimum coord
-        // is (1, 1, 1), to be safe. Theoretically (0, 0, 0) would work, but I don't trust floating
-        // point arithmetic to be that precise.
-        let offset = Pt3::new(1., 1., 1.) - self.bounds.0;
-
-        let write_triangle = |writer: &mut dyn io::Write, normal: &Vec3, vertices: &Vec<&Pt3>| {
-            assert_eq!(3, vertices.len());
-
-            writeln!(writer, "  facet normal {} {} {}\r", sc(normal.x), sc(normal.y), sc(normal.z));
-
-            writeln!(writer, "    outer loop\r");
-            for point in vertices {
-                let point = **point + offset;
-                writeln!(writer, "      vertex {} {} {}\r", sc(point.x), sc(point.y), sc(point.z));
-            }
-            writeln!(writer, "    endloop\r");
-
-            writeln!(writer, "  endfacet\r");
         };
 
         for (face_index, face) in self.face_loops.iter().enumerate() {
@@ -325,8 +252,6 @@ impl Mesh {
                 write_triangle(writer, normal, &vec![a, b, c]);
             }
         }
-
-        writeln!(writer, "endsolid meshproc\r");
 
         Ok(())
     }
