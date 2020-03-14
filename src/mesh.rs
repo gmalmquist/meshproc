@@ -1,5 +1,8 @@
 use std::f64::INFINITY;
 use std::io;
+use std::io::Write;
+
+use byteorder::{WriteBytesExt, LittleEndian};
 
 use crate::geom;
 use crate::geom::HasVertices;
@@ -20,7 +23,7 @@ impl Mesh {
         for (loop_index, lp) in face_loops.into_iter().enumerate() {
             if lp.len() < 3 {
                 eprintln!("Dropping degenerate face loop {} (|v| = {})",
-                         loop_index, lp.len());
+                          loop_index, lp.len());
                 continue;
             }
             let mut valid_vertices = true;
@@ -28,7 +31,7 @@ impl Mesh {
                 if *v >= vertices.len() {
                     valid_vertices = false;
                     eprintln!("Face loop {} has invalid vertex index {}!",
-                             loop_index, v);
+                              loop_index, v);
                 }
             }
             if !valid_vertices {
@@ -134,7 +137,7 @@ impl Mesh {
         self.recalculate_vertex_normals();
     }
 
-    pub fn write_stl(&self, writer: &mut Box<dyn io::Write>) {
+    pub fn write_stl(&self, writer: &mut Box<dyn io::Write>) -> io::Result<()> {
         // UINT8[80] – Header
         // UINT32 – Number of triangles
         //
@@ -167,8 +170,38 @@ impl Mesh {
         }
 
         let header: [u8; 80] = [0; 80];
-        writer.write(&header);
-        writer.write_u32(self.face_loops.len())
+        writer.write_all(&header);
+        writer.write_u32::<LittleEndian>(triangle_count as u32);
+
+        let write_triangle = |writer: &mut Box<dyn io::Write>, normal: &Vec3, vertices: &Vec<Pt3>| {
+            writer.write_f32::<LittleEndian>(normal.x as f32);
+            writer.write_f32::<LittleEndian>(normal.y as f32);
+            writer.write_f32::<LittleEndian>(normal.z as f32);
+
+            for point in vertices {
+                writer.write_f32::<LittleEndian>(point.x as f32);
+                writer.write_f32::<LittleEndian>(point.y as f32);
+                writer.write_f32::<LittleEndian>(point.z as f32);
+            }
+
+            writer.write_u16::<LittleEndian>(0); // Attribute count, which most tools expect to be 0.
+        };
+
+        for (face_index, &face) in self.face_loops.iter().enumerate() {
+            let normal = self.face_normal(face_index).expect("Normals are required.");
+            let write_normal = |writer: &mut Box<dyn io::Write>| {};
+
+            if face.len() == 3 {
+                // Triangle.
+                write_triangle(writer, normal, &face.iter().map(|&i| self.vertices[i]).collect());
+                continue;
+            }
+            if face.len() == 4 {
+                // Make two triangles from the quad.
+            }
+        }
+
+        Ok(())
     }
 }
 
