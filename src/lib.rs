@@ -8,8 +8,9 @@ pub mod scalar;
 pub mod threed;
 pub mod mesh;
 
-use crate::geom::{Mesh, Polygon};
+use crate::geom::{Polygon};
 use crate::threed::{Pt3};
+use crate::mesh::Mesh;
 
 pub fn load_mesh_stl(path: &str) -> Result<Mesh, std::io::Error> {
     let file = fs::OpenOptions::new().read(true).open(path);

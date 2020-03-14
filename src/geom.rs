@@ -1,5 +1,6 @@
 use crate::scalar::FloatRange;
 use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
+use crate::mesh::Mesh;
 use std::f64::INFINITY;
 
 pub trait Shape {
@@ -66,18 +67,11 @@ pub trait HasVertices {
     }
 
     fn centroid(&self) -> Pt3 {
-        let mut sum = (0., 0., 0.);
-        let count = self.vertex_count();
-        for i in 0..count {
-            let v = self.vertex(i);
-            sum.0 += v.x;
-            sum.1 += v.y;
-            sum.2 += v.z;
-        }
-        sum.0 /= count as f64;
-        sum.1 /= count as f64;
-        sum.2 /= count as f64;
-        Pt3::from_tuple(sum)
+        Pt3::centroid(&(0..self.vertex_count())
+            .collect::<Vec<_>>()
+            .iter()
+            .map(|&i| self.vertex(i))
+            .collect())
     }
 }
 
@@ -234,7 +228,7 @@ impl HasVertices for Polygon {
 }
 
 pub struct FacePointIter<'a> {
-        polygon: &'a Polygon,
+    polygon: &'a Polygon,
     frame: Frame3,
     i_values: Vec<f64>,
     j_values: Vec<f64>,
@@ -335,12 +329,11 @@ impl<'a> Edge<'a> {
 pub struct Cube {
     pub center: Pt3,
     pub dimensions: Vec3,
-    pub vertices: Vec<Pt3>,
-    pub faces: Vec<Polygon>,
+    pub mesh: Mesh,
 }
 
 impl Cube {
-    pub fn new(origin: Pt3, dimensions: Vec3, centered: bool) -> Cube {
+    pub fn new(origin: Pt3, dimensions: Vec3, centered: bool) -> Self {
         let center: Pt3 = if centered {
             origin
         } else {
@@ -351,42 +344,46 @@ impl Cube {
         let forward = dimensions.on_axis(&Vec3::forward()) / 2.;
         let up = dimensions.on_axis(&Vec3::up()) / 2.;
 
-        let rfu = (right + forward + up) + center;
-        let rfd = (right + forward - up) + center;
-        let rbd = (right - forward - up) + center;
-        let rbu = (right - forward + up) + center;
-        let lfu = (-right + forward + up) + center;
-        let lfd = (-right + forward - up) + center;
-        let lbd = (-right - forward - up) + center;
-        let lbu = (-right - forward + up) + center;
+        let push_vert = |v: Pt3, verts: &mut Vec<Pt3>| {
+            verts.push(v);
+            verts.len()
+        };
 
-        let vertices = vec![rfu, rfd, rbd, rbu, lfu, lfd, lbd, lbu];
+        let mut vertices = vec![];
+        let rfu = (push_vert)((right + forward + up) + center, &mut vertices);
+        let rfd = (push_vert)((right + forward - up) + center, &mut vertices);
+        let rbd = (push_vert)((right - forward - up) + center, &mut vertices);
+        let rbu = (push_vert)((right - forward + up) + center, &mut vertices);
+        let lfu = (push_vert)((-right + forward + up) + center, &mut vertices);
+        let lfd = (push_vert)((-right + forward - up) + center, &mut vertices);
+        let lbd = (push_vert)((-right - forward - up) + center, &mut vertices);
+        let lbu = (push_vert)((-right - forward + up) + center, &mut vertices);
 
         let faces = vec![
-            Polygon::new(vec![rfu, rbu, lbu, lfu]),
-            Polygon::new(vec![rfd, lfd, lbd, rbd]),
-            Polygon::new(vec![lfu, lbu, lbd, lfd]),
-            Polygon::new(vec![rfu, rfd, rbd, rbu]),
-            Polygon::new(vec![rfu, lfu, lfd, rfd]),
-            Polygon::new(vec![lbu, rbu, rbd, lbd]),
+            vec![rfu, rbu, lbu, lfu],
+            vec![rfd, lfd, lbd, rbd],
+            vec![lfu, lbu, lbd, lfd],
+            vec![rfu, rfd, rbd, rbu],
+            vec![rfu, lfu, lfd, rfd],
+            vec![lbu, rbu, rbd, lbd],
         ];
 
-        Cube {
+        let mesh = Mesh::new(vertices, faces, None);
+        Self {
             center,
             dimensions,
-            vertices,
-            faces,
+            mesh,
         }
     }
 }
 
 impl Shape for Cube {
     fn raycast(&self, ray: &Ray3) -> Option<RaycastHit> {
-        Mesh::raycast_polygons(&self.faces, ray)
+        self.mesh.raycast(ray)
     }
 
     fn signed_distance(&self, pt: Pt3) -> f64 {
-        Mesh::signed_distance_polygons(&self.faces, pt)
+        self.mesh.signed_distance(pt)
     }
 }
 
@@ -461,82 +458,6 @@ impl Shape for Sphere {
 
     fn signed_distance(&self, pt: Pt3) -> f64 {
         return (pt - self.center).mag() - self.radius;
-    }
-}
-
-pub struct Mesh {
-    pub file: String,
-    pub polygons: Vec<Polygon>,
-    pub bounds: (Pt3, Pt3),
-}
-
-impl Mesh {
-    pub fn new(file: &str, polygons: Vec<Polygon>) -> Mesh {
-        let mut bounds: Option<(Pt3, Pt3)> = None;
-        for poly in &polygons {
-            for v in &poly.points {
-                match bounds {
-                    Some(mut b) => {
-                        b.0.x = if b.0.x < v.x { b.0.x } else { v.x };
-                        b.0.y = if b.0.y < v.y { b.0.y } else { v.y };
-                        b.0.z = if b.0.z < v.z { b.0.z } else { v.z };
-                        b.1.x = if b.1.x > v.x { b.1.x } else { v.x };
-                        b.1.y = if b.1.y > v.y { b.1.y } else { v.y };
-                        b.1.z = if b.1.z > v.z { b.1.z } else { v.z };
-                        bounds = Some(b);
-                    }
-                    None => {
-                        bounds = Some((v.clone(), v.clone()));
-                    }
-                }
-            }
-        }
-        return Mesh {
-            file: file.to_string(),
-            polygons,
-            bounds: bounds.unwrap_or_else(|| (Pt3::zero(), Pt3::zero())),
-        };
-    }
-
-    fn raycast_polygons(polygons: &Vec<Polygon>, ray: &Ray3) -> Option<RaycastHit> {
-        let mut closest_hit: Option<RaycastHit> = None;
-        for poly in polygons {
-            let poly_hit = poly.raycast(ray);
-            if let Some(poly_hit) = poly_hit {
-                closest_hit = match closest_hit {
-                    None => Some(poly_hit),
-                    Some(closest_hit) => {
-                        if closest_hit.distance < poly_hit.distance {
-                            Some(closest_hit)
-                        } else {
-                            Some(poly_hit)
-                        }
-                    }
-                };
-            }
-        }
-        closest_hit
-    }
-
-    fn signed_distance_polygons(polygons: &Vec<Polygon>, pt: Pt3) -> f64 {
-        let mut distance = INFINITY;
-        for poly in polygons {
-            let dist = poly.signed_distance(pt);
-            if dist < distance {
-                distance = dist;
-            }
-        }
-        distance
-    }
-}
-
-impl Shape for Mesh {
-    fn raycast(&self, ray: &Ray3) -> Option<RaycastHit> {
-        Self::raycast_polygons(&self.polygons, ray)
-    }
-
-    fn signed_distance(&self, pt: Pt3) -> f64 {
-        Self::signed_distance_polygons(&self.polygons, pt)
     }
 }
 
