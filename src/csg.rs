@@ -12,6 +12,7 @@ use uuid;
 
 use crate::geom;
 use crate::mesh;
+use byteorder::WriteBytesExt;
 
 
 pub trait CsgObj {
@@ -103,25 +104,41 @@ impl BlenderCsgObj {
                     "  return cube",
                     &format!("{} = {}()", variable_name, fn_name),
                 ]
-                .join("\n")
+                    .join("\n")
             }),
         };
     }
 
     pub fn mesh(mesh: &mesh::Mesh) -> Self {
-        Self::stl(&mesh.source_file.clone()
-            .expect("Cannot perform operations on a mesh without a source STL."))
+        let mut buffer: Vec<u8> = vec![];
+        mesh.write_stl(&mut buffer).unwrap();
+
+        Self {
+            create_python_code: Box::new(move |variable_name| {
+                let temp_stl_file = format!("{}.stl", random_id());
+                let mut code = vec![
+                    format!("with open(r'{}', 'wb') as f:", temp_stl_file),
+                    format!("  f.write(bytearray([{}]))", buffer.iter()
+                        .map(|b| format!("{:#x}", b))
+                        .collect::<Vec<_>>()
+                        .join(", ")),
+                ];
+                code.push((Self::stl(&temp_stl_file).create_python_code)(variable_name));
+                code.push(format!("os.remove(r'{}')", temp_stl_file));
+                code.join("\n")
+            }),
+        }
     }
 
     pub fn stl(path: &str) -> Self {
         let path = String::from(path);
-        BlenderCsgObj {
+        Self {
             create_python_code: Box::new(move |variable_name| {
                 [
                     format!("bpy.ops.import_mesh.stl(filepath=r'{}')", path),
                     format!("{} = bpy.context.object", variable_name),
                 ]
-                .join("\n")
+                    .join("\n")
             }),
         }
     }
@@ -142,14 +159,14 @@ impl BlenderCsgObj {
             // Don't actually generate boolean operations for debugs, because they can be expensive.
             // Instead, just generate all the constituent objects that would be used in boolean
             // operations, so we can look at them in the generated .blend file.
-            return BlenderCsgObj {
+            return Self {
                 create_python_code: Box::new(move |variable_name: &str| -> String {
                     [
                         format!("{}", &a_code),
                         format!("{}", &b_code),
                         format!("{} = {}", variable_name, &a_name),
                     ]
-                    .join("\n")
+                        .join("\n")
                 }),
             };
         }
@@ -173,9 +190,9 @@ impl BlenderCsgObj {
                 format!("  return {}", a_name),
                 format!("{} = {}()", variable_name, fn_name),
             ]
-            .join("\n")
+                .join("\n")
         };
-        return BlenderCsgObj {
+        return Self {
             create_python_code: Box::new(create_python_code),
         };
     }
@@ -208,8 +225,8 @@ impl CsgObj for BlenderCsgObj {
                 "import sys",
                 "import time",
             ]
-            .join("\n")
-            .as_bytes(),
+                .join("\n")
+                .as_bytes(),
         )?;
         script_file.write("\n".as_bytes())?;
 
@@ -227,7 +244,7 @@ impl CsgObj for BlenderCsgObj {
                     "bpy.ops.wm.save_as_mainfile(filepath=r'{}.blend')\n",
                     &stl_path
                 )
-                .as_bytes(),
+                    .as_bytes(),
             )?;
         }
 
@@ -237,7 +254,7 @@ impl CsgObj for BlenderCsgObj {
                 "bpy.ops.export_mesh.stl(filepath=r'{}', use_scene_unit=True)\n",
                 &stl_path
             )
-            .as_bytes(),
+                .as_bytes(),
         )?;
 
         println!(
@@ -258,17 +275,19 @@ impl CsgObj for BlenderCsgObj {
                     );
                     println!("Blender stdout: \n{}", indent(&stdout, 2));
                     println!("Blender stderr: \n{}", indent(&stderr, 2));
-                    if stderr.trim().len() > 0 || env::var("DEBUG").is_ok() {
-                        println!("Since stderr isn't empty, script may have been invalid.");
+                    let save_script = stderr.trim().len() > 0 || env::var("DEBUG").is_ok();
+                    if save_script {
                         if let Ok(script) = std::fs::read(script_path) {
                             if let Ok(_) = std::fs::write("debug.py", script) {
                                 println!("Dumped blender script to debug.py for investigation.");
                             }
                         }
-                        Err(io::Error::new(ErrorKind::InvalidInput, stderr))
-                    } else {
-                        Ok(())
+                        if stderr.trim().len() > 0 {
+                            println!("Since stderr isn't empty, script may have been invalid.");
+                            return Err(io::Error::new(ErrorKind::InvalidInput, stderr))
+                        }
                     }
+                    Ok(())
                 } else {
                     Err(io::Error::new(
                         ErrorKind::Other,

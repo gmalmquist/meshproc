@@ -241,7 +241,7 @@ impl Cube {
 
         let push_vert = |v: Pt3, verts: &mut Vec<Pt3>| {
             verts.push(v);
-            verts.len()
+            verts.len() - 1
         };
 
         let mut vertices = vec![];
