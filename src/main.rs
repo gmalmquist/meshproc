@@ -114,8 +114,8 @@ fn generate_internal_pillars(mesh: Arc<Mesh>) -> Vec<geom::Cube> {
         ) {
             let mesh = Arc::clone(&mesh);
             let pillar_future = threadpool.spawn_with_handle(async move {
-                print!("Generating pillar {} x {}              \r", x, y);
-                std::io::stdout().flush();
+                eprint!("Generating pillar {} x {}              \r", x, y);
+                std::io::stderr().flush().unwrap();
                 generate_pillar(x, y, cell_width, &mesh, clearance)
             });
             if let Ok(pillar_future) = pillar_future {
@@ -224,7 +224,7 @@ fn csg_test() {
     match csg.render_stl("test2.stl") {
         Ok(_output) => {}
         Err(e) => {
-            println!("Error: {:#?}", e);
+            eprintln!("Error: {:#?}", e);
             std::process::exit(1);
         }
     }

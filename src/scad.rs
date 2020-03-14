@@ -99,7 +99,7 @@ impl ScadCode {
 
         // Copy all imported meshes into the tempdir with their appropriate short names.
         for (key, path) in self.imported_files.iter() {
-            fs::copy(path, tempdir.path().join(key));
+            fs::copy(path, tempdir.path().join(key)).unwrap();
         }
 
         println!(

@@ -22,7 +22,7 @@ impl Mesh {
             }
             let mut valid_vertices = true;
             for v in &lp {
-                if *v < 0 || *v >= vertices.len() {
+                if *v >= vertices.len() {
                     valid_vertices = false;
                     eprintln!("Face loop {} has invalid vertex index {}!",
                              loop_index, v);
@@ -52,7 +52,7 @@ impl Mesh {
     }
 
     pub fn face(&self, index: usize) -> Option<MeshFace> {
-        if index < 0 || index >= self.face_loops.len() {
+        if index >= self.face_loops.len() {
             return None;
         }
         Some(MeshFace {
