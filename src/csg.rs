@@ -208,15 +208,15 @@ impl CsgObj for BlenderCsgObj {
             ]
             .join("\n")
             .as_bytes(),
-        );
-        script_file.write("\n".as_bytes());
+        )?;
+        script_file.write("\n".as_bytes())?;
 
         // Load an empty scene.
-        script_file.write("bpy.ops.wm.read_homefile(use_empty=True)\n".as_bytes());
+        script_file.write("bpy.ops.wm.read_homefile(use_empty=True)\n".as_bytes())?;
 
         // Generate this object.
         script_file.write_all((self.create_python_code)("main_csg_object").as_bytes())?;
-        script_file.write("\n".as_bytes());
+        script_file.write("\n".as_bytes())?;
 
         if let Ok(_) = env::var("DEBUG") {
             // Save a .blend file for debugging purposes.
@@ -226,7 +226,7 @@ impl CsgObj for BlenderCsgObj {
                     &stl_path
                 )
                 .as_bytes(),
-            );
+            )?;
         }
 
         // Export the scene as an stl.
@@ -236,7 +236,7 @@ impl CsgObj for BlenderCsgObj {
                 &stl_path
             )
             .as_bytes(),
-        );
+        )?;
 
         println!(
             "Running blender with script {}",

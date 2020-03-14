@@ -1,19 +1,18 @@
 use std::env;
 use std::fs;
 use std::io::Write;
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use futures::executor;
 use futures::io::{Error, ErrorKind};
+use futures::task::SpawnExt;
 
-use futures::task::{SpawnExt};
+use meshproc::{geom, threed};
 use meshproc::csg::{CsgObj, ToCsg};
 use meshproc::geom::{Cube, Mesh, Polygon, Shape};
 use meshproc::load_mesh_stl;
-
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
-use meshproc::{csg, geom, scad, threed};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -85,7 +84,7 @@ fn cube_normal_test() {
         }
     }
 
-    csg.render_stl("test-normals.stl");
+    csg.render_stl("test-normals.stl").expect("Expected test normals to render.");
 }
 
 fn generate_internal_pillars(mesh: Arc<Mesh>) -> Vec<geom::Cube> {

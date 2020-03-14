@@ -215,7 +215,6 @@ impl Polygon {
             i_values,
             j_values,
             index: 0,
-            resolution,
         }
     }
 }
@@ -235,12 +234,11 @@ impl HasVertices for Polygon {
 }
 
 pub struct FacePointIter<'a> {
-    polygon: &'a Polygon,
+        polygon: &'a Polygon,
     frame: Frame3,
     i_values: Vec<f64>,
     j_values: Vec<f64>,
     index: usize,
-    resolution: f64,
 }
 
 impl<'a> Iterator for FacePointIter<'a> {

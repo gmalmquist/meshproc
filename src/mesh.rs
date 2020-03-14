@@ -1,7 +1,8 @@
-use crate::threed::{Pt3, Vec3, Ray3};
-use crate::geom;
-use crate::geom::{HasVertices, Shape};
 use std::f64::INFINITY;
+
+use crate::geom;
+use crate::geom::HasVertices;
+use crate::threed::{Pt3, Ray3, Vec3};
 
 pub struct Mesh {
     pub vertices: Vec<Pt3>,
