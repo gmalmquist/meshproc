@@ -160,7 +160,7 @@ impl Mesh {
         self.recalculate_vertex_normals();
     }
 
-    pub fn write_stl(&self, writer: &mut Box<dyn io::Write>) -> io::Result<()> {
+    pub fn write_stl(&self, writer: &mut dyn io::Write) -> io::Result<()> {
         // UINT8[80] – Header
         // UINT32 – Number of triangles
         //
@@ -196,7 +196,7 @@ impl Mesh {
         writer.write_all(&header);
         writer.write_u32::<LittleEndian>(triangle_count as u32);
 
-        let write_triangle = |writer: &mut Box<dyn io::Write>, normal: &Vec3, vertices: &Vec<&Pt3>| {
+        let write_triangle = |writer: &mut dyn io::Write, normal: &Vec3, vertices: &Vec<&Pt3>| {
             writer.write_f32::<LittleEndian>(normal.x as f32);
             writer.write_f32::<LittleEndian>(normal.y as f32);
             writer.write_f32::<LittleEndian>(normal.z as f32);
