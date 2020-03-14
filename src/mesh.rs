@@ -79,7 +79,7 @@ impl Mesh {
 
     pub fn recalculate_normals(&mut self) {
         self.face_normals.clear();
-        for (index, lp) in self.face_loops.iter().enumerate() {
+        for (_index, lp) in self.face_loops.iter().enumerate() {
             let edge_one = &self.vertices[lp[1]] - &self.vertices[lp[0]];
             let edge_two = &self.vertices[lp[2]] - &self.vertices[lp[1]];
             self.face_normals.push(edge_two.cross(&edge_one).normalized());
@@ -88,7 +88,7 @@ impl Mesh {
 
     pub fn recalculate_centroids(&mut self) {
         self.face_centroids.clear();
-        for (index, lp) in self.face_loops.iter().enumerate() {
+        for (_index, lp) in self.face_loops.iter().enumerate() {
             let mut centroid = Pt3::zero();
             for vertex_index in lp {
                 let v = self.vertices[*vertex_index];
@@ -106,7 +106,7 @@ impl Mesh {
     pub fn recalculate_vertex_normals(&mut self) {
         self.vertex_normals.clear();
 
-        for i in 0..self.vertices.len() {
+        for _i in 0..self.vertices.len() {
             self.vertex_normals.push(Vec3::zero());
         }
 

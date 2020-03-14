@@ -1,9 +1,9 @@
 use std::env;
-use std::env::var;
+
 use std::fs;
 use std::io;
 use std::io::Write;
-use std::ops::Add;
+
 use std::process;
 
 use futures::io::ErrorKind;
@@ -11,7 +11,7 @@ use tempfile;
 use uuid;
 
 use crate::geom;
-use crate::threed::{Pt3, ThreeD, Vec3};
+
 
 pub trait CsgObj {
     type Type: CsgObj;

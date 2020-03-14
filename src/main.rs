@@ -1,16 +1,16 @@
 use std::env;
 use std::fs;
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 
 use futures::executor;
 use futures::io::{Error, ErrorKind};
 
-use futures::task::{Spawn, SpawnExt};
+use futures::task::{SpawnExt};
 use meshproc::csg::{CsgObj, ToCsg};
 use meshproc::geom::{Cube, Mesh, Polygon, Shape};
 use meshproc::load_mesh_stl;
-use meshproc::scad::{StlImport, ToScad};
+
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
 use meshproc::{csg, geom, scad, threed};
@@ -142,7 +142,7 @@ fn generate_pillar(
     clearance: f64,
 ) -> Option<geom::Cube> {
     let ray_spacing = 1.0;
-    let (mind, maxd) = &mesh.bounds;
+    let (mind, _maxd) = &mesh.bounds;
     let base_z = mind.z + clearance;
 
     let bottom_face = Polygon::new(vec![
@@ -163,7 +163,7 @@ fn generate_pillar(
     }
 
     if let Some(height) = height {
-        let mut height = height - clearance;
+        let height = height - clearance;
         if height < clearance {
             // NB: We use the clearance as the minimum valid height, which seems reasonable
             // but may not be obvious.
@@ -222,7 +222,7 @@ fn csg_test() {
 
     let csg = cube.to_csg().union(&sphere.to_csg());
     match csg.render_stl("test2.stl") {
-        Ok(output) => {}
+        Ok(_output) => {}
         Err(e) => {
             println!("Error: {:#?}", e);
             std::process::exit(1);

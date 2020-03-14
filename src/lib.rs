@@ -9,10 +9,10 @@ pub mod threed;
 pub mod mesh;
 
 use crate::geom::{Mesh, Polygon};
-use crate::threed::{Pt3, Vec3};
+use crate::threed::{Pt3};
 
 pub fn load_mesh_stl(path: &str) -> Result<Mesh, std::io::Error> {
-    let mut file = fs::OpenOptions::new().read(true).open(path);
+    let file = fs::OpenOptions::new().read(true).open(path);
     if let Err(e) = file {
         return Err(e);
     }

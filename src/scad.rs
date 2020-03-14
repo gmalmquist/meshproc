@@ -3,9 +3,9 @@ use crate::threed::{Pt3, Vec3};
 use std::collections::HashMap;
 use std::env;
 use std::ffi::OsStr;
-use std::fmt::Display;
+
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{Write};
 use std::ops::Add;
 use std::process::Command;
 use tempfile;
