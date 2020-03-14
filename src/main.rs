@@ -9,10 +9,11 @@ use futures::task::SpawnExt;
 
 use meshproc::{geom, threed};
 use meshproc::csg::{CsgObj, ToCsg};
-use meshproc::geom::{Cube, Mesh, Polygon, Shape};
+use meshproc::geom::{Cube, Polygon, Shape, HasVertices};
 use meshproc::load_mesh_stl;
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
+use meshproc::mesh::Mesh;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -43,7 +44,7 @@ fn main() {
     }
     let mesh = mesh.unwrap();
 
-    println!("Loaded: mesh has {} faces.", mesh.polygons.len());
+    println!("Loaded: mesh has {} faces.", mesh.face_count());
 
     let bounds = &mesh.bounds;
     println!("Bounds: {} to {}", bounds.0, bounds.1);
@@ -74,11 +75,11 @@ fn cube_normal_test() {
 
     let mut csg = cube.to_csg();
 
-    for face in &cube.faces {
-        println!("Face: {}, {}", face.normal, face.normal * 10.);
+    for face in cube.faces() {
+        println!("Face: {}, {}", face.normal(), face.normal() * 10.);
         for point in face.points(1.) {
             csg = csg.union(
-                &geom::Cube::new(point + (face.normal * 3.), Vec3::new(0.5, 0.5, 0.5), true)
+                &geom::Cube::new(point + (face.normal() * 3.), Vec3::new(0.5, 0.5, 0.5), true)
                     .to_csg(),
             );
         }
@@ -152,7 +153,7 @@ fn generate_pillar(
     ]);
 
     let mut height: Option<f64> = None;
-    for pt in bottom_face.points(ray_spacing) {
+    for pt in bottom_face.face().points(ray_spacing) {
         let hit = mesh.raycast(&Ray3::new(pt, Vec3::up()));
         if let Some(hit) = hit {
             if height.is_none() || height.unwrap() > hit.distance {
@@ -176,9 +177,9 @@ fn generate_pillar(
         );
 
         let mut lowest_tangent_collision: Option<f64> = None;
-        for face in &cube.faces {
+        for face in cube.faces() {
             for point in face.points(ray_spacing) {
-                let hit = mesh.raycast(&Ray3::new(point.clone(), face.normal));
+                let hit = mesh.raycast(&Ray3::new(point.clone(), face.normal()));
                 let hit_height = if let Some(hit) = hit {
                     if hit.distance >= clearance {
                         continue; // This is fine.

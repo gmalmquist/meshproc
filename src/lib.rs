@@ -8,8 +8,8 @@ pub mod scalar;
 pub mod threed;
 pub mod mesh;
 
-use crate::geom::{Polygon};
-use crate::threed::{Pt3};
+use crate::geom::Polygon;
+use crate::threed::Pt3;
 use crate::mesh::Mesh;
 
 pub fn load_mesh_stl(path: &str) -> Result<Mesh, std::io::Error> {
@@ -22,21 +22,15 @@ pub fn load_mesh_stl(path: &str) -> Result<Mesh, std::io::Error> {
     let stl = stl_io::read_stl(&mut file);
     match stl {
         Ok(stl) => Ok(Mesh::new(
-            path,
-            stl.faces
-                .iter()
-                .map(|f| {
-                    Polygon::new(
-                        f.vertices
-                            .iter()
-                            .map(|v| {
-                                let co = &stl.vertices[*v];
-                                Pt3::from_tuple((co[0] as f64, co[1] as f64, co[2] as f64))
-                            })
-                            .collect(),
-                    )
-                })
+            stl.vertices.iter()
+                .map(|v| Pt3::new(v[0] as f64, v[1] as f64, v[2] as f64))
                 .collect(),
+            stl.faces.iter()
+                .map(|face| face.vertices.iter()
+                    .map(|i| *i)
+                    .collect::<Vec<_>>())
+                .collect(),
+            Some(String::from(path)),
         )),
         Err(e) => Err(e),
     }

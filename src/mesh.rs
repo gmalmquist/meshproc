@@ -5,13 +5,15 @@ use std::io::Write;
 use byteorder::{WriteBytesExt, LittleEndian};
 
 use crate::geom;
-use crate::geom::HasVertices;
-use crate::threed::{Pt3, Ray3, Vec3};
+use crate::geom::{HasVertices};
+use crate::threed::{Pt3, Ray3, Vec3, Frame3, Basis3};
+use crate::scalar::FloatRange;
 
 pub struct Mesh {
     pub vertices: Vec<Pt3>,
     pub face_loops: Vec<Vec<usize>>,
     pub source_file: Option<String>,
+    pub bounds: (Pt3, Pt3),
     face_normals: Vec<Vec3>,
     face_centroids: Vec<Pt3>,
     vertex_normals: Vec<Vec3>,
@@ -44,6 +46,7 @@ impl Mesh {
             vertices,
             face_loops: new_loops,
             source_file,
+            bounds: (Pt3::zero(), Pt3::zero()),
             face_normals: vec![],
             face_centroids: vec![],
             vertex_normals: vec![],
@@ -68,6 +71,10 @@ impl Mesh {
         })
     }
 
+    pub fn face_count(&self) -> usize {
+        self.face_loops.len()
+    }
+
     pub fn faces(&self) -> MeshFaceIter {
         MeshFaceIter { mesh: self, index: 0 }
     }
@@ -90,6 +97,21 @@ impl Mesh {
             let edge_one = &self.vertices[lp[1]] - &self.vertices[lp[0]];
             let edge_two = &self.vertices[lp[2]] - &self.vertices[lp[1]];
             self.face_normals.push(edge_two.cross(&edge_one).normalized());
+        }
+    }
+
+    pub fn recalculate_bounds(&mut self) {
+        let mut first = true;
+        for pt in &self.vertices {
+            if first {
+                self.bounds.0.set(pt);
+                self.bounds.1.set(pt);
+                first = false;
+                continue;
+            }
+
+            self.bounds.0.set_min(pt);
+            self.bounds.1.set_max(pt);
         }
     }
 
@@ -132,6 +154,7 @@ impl Mesh {
     }
 
     pub fn recalculate_geometry(&mut self) {
+        self.recalculate_bounds();
         self.recalculate_centroids();
         self.recalculate_normals();
         self.recalculate_vertex_normals();
@@ -173,7 +196,7 @@ impl Mesh {
         writer.write_all(&header);
         writer.write_u32::<LittleEndian>(triangle_count as u32);
 
-        let write_triangle = |writer: &mut Box<dyn io::Write>, normal: &Vec3, vertices: &Vec<Pt3>| {
+        let write_triangle = |writer: &mut Box<dyn io::Write>, normal: &Vec3, vertices: &Vec<&Pt3>| {
             writer.write_f32::<LittleEndian>(normal.x as f32);
             writer.write_f32::<LittleEndian>(normal.y as f32);
             writer.write_f32::<LittleEndian>(normal.z as f32);
@@ -187,18 +210,39 @@ impl Mesh {
             writer.write_u16::<LittleEndian>(0); // Attribute count, which most tools expect to be 0.
         };
 
-        for (face_index, &face) in self.face_loops.iter().enumerate() {
+        for (face_index, face) in self.face_loops.iter().enumerate() {
             let normal = self.face_normal(face_index).expect("Normals are required.");
-            let write_normal = |writer: &mut Box<dyn io::Write>| {};
 
             if face.len() == 3 {
-                // Triangle.
-                write_triangle(writer, normal, &face.iter().map(|&i| self.vertices[i]).collect());
+                // Simple triangle.
+                write_triangle(writer, normal, &face.iter()
+                    .map(|&i| &self.vertices[i])
+                    .collect());
                 continue;
             }
+
             if face.len() == 4 {
                 // Make two triangles from the quad.
+                write_triangle(writer, normal, &face[0..3].iter()
+                    .map(|&i| &self.vertices[i])
+                    .collect());
+                write_triangle(writer, normal, &[face[3], face[3], face[1], face[2]].iter()
+                    .map(|&i| &self.vertices[i])
+                    .collect());
+                continue;
             }
+
+            // Triangulate with a pinwheel.
+            let pts: Vec<&Pt3> = face.iter().map(|&i| &self.vertices[i]).collect();
+            let centroid = Pt3::centroid(&pts);
+
+            for i in 0..pts.len() {
+                let a = pts[i];
+                let b = pts[(i + 1) % pts.len()];
+                let c = &centroid;
+                write_triangle(writer, normal, &vec![a, b, c]);
+            }
+            continue;
         }
 
         Ok(())
@@ -262,6 +306,44 @@ impl<'a> MeshFace<'a> {
         }
         true
     }
+
+    pub fn points(&self, resolution: f64) -> FacePointIter {
+        let basis = Basis3::from_normal(self.normal());
+        let frame = Frame3::new(self.centroid(), basis);
+
+        let mut min = (None, None);
+        let mut max = (None, None);
+        for i in 0..self.vertex_count() {
+            let pt = self.vertex(i);
+            let local = frame.project(pt);
+            if min.0.is_none() || min.0.unwrap() < local.i {
+                min.0 = Some(local.i);
+            }
+            if max.0.is_none() || max.0.unwrap() > local.i {
+                max.0 = Some(local.i);
+            }
+            if min.1.is_none() || min.1.unwrap() < local.j {
+                min.1 = Some(local.j);
+            }
+            if max.1.is_none() || max.1.unwrap() > local.j {
+                max.1 = Some(local.j);
+            }
+        }
+
+        let min = (min.0.unwrap(), min.1.unwrap());
+        let max = (max.0.unwrap(), max.1.unwrap());
+
+        let i_values = FloatRange::from_step_size(min.0, max.0, resolution).collect();
+        let j_values = FloatRange::from_step_size(min.1, max.1, resolution).collect();
+
+        FacePointIter {
+            face: self,
+            frame,
+            i_values,
+            j_values,
+            index: 0,
+        }
+    }
 }
 
 impl<'a> geom::HasVertices for MeshFace<'a> {
@@ -283,21 +365,6 @@ impl<'a> geom::HasVertices for MeshFace<'a> {
 
     fn centroid(&self) -> Pt3 {
         self.mesh.face_centroid(self.index).expect("Face centroid wasn't calculated").clone()
-    }
-}
-
-pub struct MeshFaceIter<'a> {
-    mesh: &'a Mesh,
-    index: usize,
-}
-
-impl<'a> Iterator for MeshFaceIter<'a> {
-    type Item = MeshFace<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.mesh.face(self.index);
-        self.index += 1;
-        next
     }
 }
 
@@ -342,5 +409,46 @@ impl<'a> geom::Shape for MeshFace<'a> {
         }
 
         distance * sign
+    }
+}
+
+
+pub struct MeshFaceIter<'a> {
+    mesh: &'a Mesh,
+    index: usize,
+}
+
+impl<'a> Iterator for MeshFaceIter<'a> {
+    type Item = MeshFace<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.mesh.face(self.index);
+        self.index += 1;
+        next
+    }
+}
+
+pub struct FacePointIter<'a> {
+    face: &'a MeshFace<'a>,
+    frame: Frame3,
+    i_values: Vec<f64>,
+    j_values: Vec<f64>,
+    index: usize,
+}
+
+impl<'a> Iterator for FacePointIter<'a> {
+    type Item = Pt3;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let i_index = self.index / self.i_values.len();
+        let j_index = self.index % self.i_values.len();
+        self.index += 1;
+        if i_index >= self.i_values.len() || j_index >= self.j_values.len() {
+            return None;
+        }
+        let local = self
+            .frame
+            .local(self.i_values[i_index], self.j_values[j_index], 0.);
+        Some(self.frame.unproject(&local))
     }
 }

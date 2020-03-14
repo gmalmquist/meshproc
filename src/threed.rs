@@ -243,6 +243,36 @@ impl Pt3 {
         return (self.x, self.y, self.z);
     }
 
+    pub fn set(&mut self, pt: &Pt3) {
+        self.x = pt.x;
+        self.y = pt.y;
+        self.z = pt.z;
+    }
+
+    pub fn set_max(&mut self, pt: &Pt3) {
+        if pt.x > self.x {
+            self.x = pt.x;
+        }
+        if pt.y > self.y {
+            self.y = pt.y;
+        }
+        if pt.z > self.z {
+            self.z = pt.z;
+        }
+    }
+
+    pub fn set_min(&mut self, pt: &Pt3) {
+        if pt.x < self.x {
+            self.x = pt.x;
+        }
+        if pt.y < self.y {
+            self.y = pt.y;
+        }
+        if pt.z < self.z {
+            self.z = pt.z;
+        }
+    }
+
     pub fn zero() -> Self {
         return Self {
             x: 0.,
