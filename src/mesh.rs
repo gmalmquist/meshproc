@@ -9,6 +9,8 @@ use crate::geom;
 use crate::geom::HasVertices;
 use crate::scalar::FloatRange;
 use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
+use std::collections::HashSet;
+use std::fmt::Debug;
 
 pub struct Mesh {
     pub vertices: Vec<Pt3>,
@@ -181,18 +183,23 @@ impl Mesh {
         self.face_corners.clear();
         for (i, face_loop) in self.face_loops.iter().enumerate() {
             self.face_corners.push(vec![]);
-            for v in face_loop {
+            for (vi, v) in face_loop.iter().enumerate() {
                 vertices_to_faces[*v].push(i);
                 self.face_corners[i].push(self.corners.len());
                 self.corners.push(RawCorner {
                     face: i,
-                    vert: *v,
+                    vert: vi,
                 })
             }
         }
 
         self.left_corners.clear();
         self.right_corners.clear();
+
+        for i in 0..self.corners.len() {
+            self.left_corners.push(i);
+            self.right_corners.push(i);
+        }
 
         for (corner_index, c) in self.corners.iter().enumerate() {
             let face = &self.face_loops[c.face];
@@ -217,25 +224,12 @@ impl Mesh {
                     left_corner = self.face_corners[*adj_face_index][adj_face_vi];
                 }
             }
-            self.left_corners.push(left_corner);
+            self.left_corners[corner_index] = left_corner;
+            self.right_corners[left_corner] = corner_index;
 
-            // This is just for initialization, not the final value.
-            self.right_corners.push(corner_index);
-        }
-
-        for (corner_index, c) in self.corners.iter().enumerate() {
-            if self.right_corners[corner_index] != corner_index {
-                continue; // Was already initialized.
-            }
-            let mut curr = corner_index;
-            loop {
-                let prev = curr;
-                curr = self.left_corners[curr];
-                self.right_corners[curr] = prev;
-                if curr == corner_index {
-                    break;
-                }
-            }
+            eprintln!("L({:#?}) = {:#?}",
+                      Corner::new(self, corner_index),
+                      Corner::new(self, left_corner));
         }
     }
 
@@ -384,7 +378,7 @@ struct RawCorner {
 
 pub struct Corner<'m> {
     mesh: &'m Mesh,
-    corner_index: usize,
+    index: usize,
     raw_corner: &'m RawCorner,
 }
 
@@ -393,7 +387,7 @@ impl<'m> Corner<'m> {
         assert!(corner_index < mesh.corners.len());
         Self {
             mesh,
-            corner_index,
+            index: corner_index,
             raw_corner: &mesh.corners[corner_index],
         }
     }
@@ -421,16 +415,36 @@ impl<'m> Corner<'m> {
 
     /// Get the next corner rotating counter-clockwise around this vertex.
     pub fn left(&self) -> Self {
-        Self::new(self.mesh, self.mesh.left_corners[self.corner_index])
+        Self::new(self.mesh, self.mesh.left_corners[self.index])
     }
 
     /// Get the next corner rotating clockwise around this vertex.
     pub fn right(&self) -> Self {
-        Self::new(self.mesh, self.mesh.right_corners[self.corner_index])
+        Self::new(self.mesh, self.mesh.right_corners[self.index])
     }
 
     fn loop_size(&self) -> usize {
         self.mesh.face_loops[self.raw_corner.face].len()
+    }
+}
+
+impl<'a> PartialEq for Corner<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+    }
+}
+
+impl<'a> Eq for Corner<'a> {
+}
+
+impl<'a> Debug for Corner<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "c({}; fi={}; fci={}, vi={})",
+               self.index,
+               self.raw_corner.face,
+               self.raw_corner.vert,
+               self.vertex_index());
+        Ok(())
     }
 }
 
@@ -664,5 +678,131 @@ impl MeshBuilder {
 
     pub fn build(self) -> Mesh {
         Mesh::new(self.vertices, self.face_loops, self.source_file)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::threed::Pt3;
+    use crate::mesh::{Mesh, MeshBuilder, Corner};
+
+    #[test]
+    fn vertices_from_corners() {
+        let m = TwoTriangles::new();
+
+        // Check that corners map to expected vertex indices.
+        assert_eq!(m.c_a().vertex_index(), m.a);
+        assert_eq!(m.c_abd().vertex_index(), m.b);
+        assert_eq!(m.c_adb().vertex_index(), m.d);
+        assert_eq!(m.c_c().vertex_index(), m.c);
+        assert_eq!(m.c_bdc().vertex_index(), m.d);
+        assert_eq!(m.c_cbd().vertex_index(), m.b);
+    }
+
+    #[test]
+    fn counter_clockwise_looping() {
+        let m = TwoTriangles::new();
+
+        // Check next() counter-clockwise looping.
+        assert_eq!(m.c_a().next(), m.c_abd());
+        assert_eq!(m.c_adb().next(), m.c_a());
+        assert_eq!(m.c_abd().next(), m.c_adb());
+    }
+
+    #[test]
+    pub fn clockwise_looping() {
+        let m = TwoTriangles::new();
+
+        // Check prev() clockwise looping.
+        assert_eq!(m.c_a().prev(), m.c_adb());
+        assert_eq!(m.c_adb().prev(), m.c_abd());
+        assert_eq!(m.c_abd().prev(), m.c_a());
+    }
+
+    #[test]
+    pub fn left_adjacency() {
+        let m = TwoTriangles::new();
+
+        // Check left adjacency
+        assert_eq!(m.c_a().left(), m.c_a()); // has no adjacent faces.
+        assert_eq!(m.c_adb().left(), m.c_adb()); // exterior
+        assert_eq!(m.c_abd().left(), m.c_abd()); // exterior
+        assert_eq!(m.c_c().left(), m.c_c()); // no adjacent faces
+
+        // actual lefts.
+        assert_eq!(m.c_bdc().left(), m.c_adb());
+        assert_eq!(m.c_cbd().left(), m.c_abd());
+    }
+
+
+    #[test]
+    pub fn right_adjacency() {
+        let m = TwoTriangles::new();
+
+        // Check right adjacency
+        assert_eq!(m.c_adb().right(), m.c_bdc());
+        assert_eq!(m.c_abd().right(), m.c_cbd());
+
+        assert_eq!(m.c_a().right(), m.c_a()); // has no adjacent faces.
+        assert_eq!(m.c_c().right(), m.c_c()); // no adjacent faces
+        assert_eq!(m.c_bdc().right(), m.c_bdc()); // exterior
+        assert_eq!(m.c_cbd().right(), m.c_cbd()); // exterior
+    }
+
+    struct TwoTriangles {
+        a: usize,
+        b: usize,
+        c: usize,
+        d: usize,
+        mesh: Mesh,
+    }
+
+    impl TwoTriangles {
+        fn new() -> Self {
+            // A+++++++D
+            // +     _/+
+            // +   _/  +
+            // + _/    +
+            // +/      +
+            // B+++++++C
+
+            let mut builder = MeshBuilder::new();
+            let a = builder.add_vertex(Pt3::new(0., 10., 0.));
+            let b = builder.add_vertex(Pt3::new(0., 0., 0.));
+            let c = builder.add_vertex(Pt3::new(10., 0., 0.));
+            let d = builder.add_vertex(Pt3::new(10., 10., 0.));
+
+            builder.add_face(vec![a, b, d]);
+            builder.add_face(vec![d, b, c]);
+
+            let mesh = builder.build();
+            Self {
+                a, b, d, c, mesh
+            }
+        }
+
+        fn c_a(&self) -> Corner {
+            self.mesh.corner(0, 0)
+        }
+
+        fn c_abd(&self) -> Corner {
+            self.mesh.corner(0, 1)
+        }
+
+        fn c_adb(&self) -> Corner {
+            self.mesh.corner(0, 2)
+        }
+
+        fn c_c(&self) -> Corner {
+            self.mesh.corner(1, 2)
+        }
+
+        fn c_bdc(&self) -> Corner {
+            self.mesh.corner(1, 0)
+        }
+
+        fn c_cbd(&self) -> Corner {
+            self.mesh.corner(1, 1)
+        }
     }
 }
