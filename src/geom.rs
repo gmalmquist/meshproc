@@ -1,9 +1,10 @@
-use crate::scalar::FloatRange;
-use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
-use crate::mesh::{Mesh, MeshFaceIter, MeshFace, MeshBuilder};
 use std::f64::INFINITY;
 use std::ops::Div;
 use std::panic::resume_unwind;
+
+use crate::mesh::{Mesh, MeshBuilder, MeshFace, MeshFaceIter};
+use crate::scalar::FloatRange;
+use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
 
 pub trait Shape {
     fn raycast(&self, ray: &Ray3) -> Option<RaycastHit>;
@@ -57,7 +58,7 @@ impl Shape for Plane {
     }
 }
 
-pub trait FaceLike<T: FaceLike<T> = Self> {
+pub trait FaceLike<T: FaceLike<T> = Self>: Shape {
     fn vertex(&self, index: usize) -> &Pt3;
     fn vertex_count(&self) -> usize;
 
@@ -140,6 +141,50 @@ pub trait FaceLike<T: FaceLike<T> = Self> {
     fn self_ref(&self) -> &dyn FaceLike<T>;
 }
 
+impl<T: FaceLike<T>> Shape for T {
+    fn raycast(&self, ray: &Ray3) -> Option<RaycastHit> {
+        let hit_on_plane = self.plane().raycast(ray);
+        return match hit_on_plane {
+            Some(hit) => {
+                if self.contains(&hit.point) {
+                    Some(hit)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+    }
+
+    fn signed_distance(&self, pt: Pt3) -> f64 {
+        let plane = self.plane();
+        let sign = if plane.normal * (pt - plane.origin) >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
+
+        // If the projection of the point onto the plane of this polygon is contained within the
+        // boundaries of this polygon, that projection will be the closest point.
+        let projection = self.plane().project(pt);
+        if self.contains(&projection) {
+            return sign * (projection - pt).mag();
+        }
+
+        // If we're outside the bounds of the polygon, our distance to it is the closest distance
+        // to any of its edges.
+        let mut distance = 0.0;
+        for edge in self.edges() {
+            let edge_distance = edge.distance(pt);
+            if edge_distance < distance {
+                distance = edge_distance;
+            }
+        }
+
+        distance * sign
+    }
+}
+
 pub struct FacePointIter<'a, T: FaceLike<T>> {
     face: &'a dyn FaceLike<T>,
     frame: Frame3,
@@ -202,50 +247,28 @@ impl<'a, T: FaceLike<T>> Iterator for FaceEdgeIter<'a, T> {
 }
 
 pub struct Polygon {
-    mesh: Mesh,
+    vertices: Vec<Pt3>,
 }
 
 impl Polygon {
-    pub fn new(points: Vec<Pt3>) -> Self {
-        let loops = vec![(0..points.len()).collect()];
+    pub fn new(vertices: Vec<Pt3>) -> Self {
         Self {
-            mesh: Mesh::new(
-                points,
-                loops,
-                None,
-            )
+            vertices
         }
-    }
-
-    pub fn face(&self) -> MeshFace {
-        self.mesh.face(0).unwrap()
     }
 }
 
 impl FaceLike<Polygon> for Polygon {
     fn vertex(&self, index: usize) -> &Pt3 {
-        // NB: This works because the mesh contains exactly one face, so the mesh vertex indices
-        // are the same as the face vertex indices.
-        self.mesh.vertex(index).unwrap()
+        &self.vertices[index]
     }
 
     fn vertex_count(&self) -> usize {
-        self.face().vertex_count()
+        self.vertices.len()
     }
 
     fn self_ref(&self) -> &dyn FaceLike<Polygon> {
         self
-    }
-}
-
-
-impl Shape for Polygon {
-    fn raycast(&self, ray: &Ray3) -> Option<RaycastHit> {
-        self.mesh.raycast(ray)
-    }
-
-    fn signed_distance(&self, pt: Pt3) -> f64 {
-        self.face().signed_distance(pt)
     }
 }
 

@@ -499,51 +499,6 @@ impl<'a> geom::FaceLike<MeshFace<'a>> for MeshFace<'a> {
     }
 }
 
-impl<'a> geom::Shape for MeshFace<'a> {
-    fn raycast(&self, ray: &Ray3) -> Option<geom::RaycastHit> {
-        let hit_on_plane = self.plane().raycast(ray);
-        return match hit_on_plane {
-            Some(hit) => {
-                if self.contains(&hit.point) {
-                    Some(hit)
-                } else {
-                    None
-                }
-            }
-            None => None,
-        };
-    }
-
-    fn signed_distance(&self, pt: Pt3) -> f64 {
-        let plane = self.plane();
-        let sign = if plane.normal * (pt - plane.origin) >= 0.0 {
-            1.0
-        } else {
-            -1.0
-        };
-
-        // If the projection of the point onto the plane of this polygon is contained within the
-        // boundaries of this polygon, that projection will be the closest point.
-        let projection = self.plane().project(pt);
-        if self.contains(&projection) {
-            return sign * (projection - pt).mag();
-        }
-
-        // If we're outside the bounds of the polygon, our distance to it is the closest distance
-        // to any of its edges.
-        let mut distance = 0.0;
-        for edge in self.edges() {
-            let edge_distance = edge.distance(pt);
-            if edge_distance < distance {
-                distance = edge_distance;
-            }
-        }
-
-        distance * sign
-    }
-}
-
-
 pub struct MeshFaceIter<'a> {
     mesh: &'a Mesh,
     index: usize,

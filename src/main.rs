@@ -196,7 +196,7 @@ fn generate_pillar(
     ]);
 
     let mut height: Option<f64> = None;
-    for pt in bottom_face.face().points(ray_spacing) {
+    for pt in bottom_face.points(ray_spacing) {
         let hit = mesh.raycast(&Ray3::new(pt, Vec3::up()));
         if let Some(hit) = hit {
             if height.is_none() || height.unwrap() > hit.distance {
