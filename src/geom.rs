@@ -1,6 +1,6 @@
 use crate::scalar::FloatRange;
 use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
-use crate::mesh::{Mesh, MeshFaceIter, MeshFace};
+use crate::mesh::{Mesh, MeshFaceIter, MeshFace, MeshBuilder};
 use std::f64::INFINITY;
 
 pub trait Shape {
@@ -239,31 +239,25 @@ impl Cube {
         let forward = dimensions.on_axis(&Vec3::forward()) / 2.;
         let up = dimensions.on_axis(&Vec3::up()) / 2.;
 
-        let push_vert = |v: Pt3, verts: &mut Vec<Pt3>| {
-            verts.push(v);
-            verts.len() - 1
-        };
+        let mut builder = MeshBuilder::new();
 
-        let mut vertices = vec![];
-        let rfu = (push_vert)((right + forward + up) + center, &mut vertices);
-        let rfd = (push_vert)((right + forward - up) + center, &mut vertices);
-        let rbd = (push_vert)((right - forward - up) + center, &mut vertices);
-        let rbu = (push_vert)((right - forward + up) + center, &mut vertices);
-        let lfu = (push_vert)((-right + forward + up) + center, &mut vertices);
-        let lfd = (push_vert)((-right + forward - up) + center, &mut vertices);
-        let lbd = (push_vert)((-right - forward - up) + center, &mut vertices);
-        let lbu = (push_vert)((-right - forward + up) + center, &mut vertices);
+        let rfu = builder.add_vertex((right + forward + up) + center);
+        let rfd = builder.add_vertex((right + forward - up) + center);
+        let rbd = builder.add_vertex((right - forward - up) + center);
+        let rbu = builder.add_vertex((right - forward + up) + center);
+        let lfu = builder.add_vertex((-right + forward + up) + center);
+        let lfd = builder.add_vertex((-right + forward - up) + center);
+        let lbd = builder.add_vertex((-right - forward - up) + center);
+        let lbu = builder.add_vertex((-right - forward + up) + center);
 
-        let faces = vec![
-            vec![rfu, rbu, lbu, lfu],
-            vec![rfd, lfd, lbd, rbd],
-            vec![lfu, lbu, lbd, lfd],
-            vec![rfu, rfd, rbd, rbu],
-            vec![rfu, lfu, lfd, rfd],
-            vec![lbu, rbu, rbd, lbd],
-        ];
+        builder.add_face(vec![rfu, rbu, lbu, lfu]);
+        builder.add_face(vec![rfd, lfd, lbd, rbd]);
+        builder.add_face(vec![lfu, lbu, lbd, lfd]);
+        builder.add_face(vec![rfu, rfd, rbd, rbu]);
+        builder.add_face(vec![rfu, lfu, lfd, rfd]);
+        builder.add_face(vec![lbu, rbu, rbd, lbd]);
 
-        let mesh = Mesh::new(vertices, faces, None);
+        let mesh = builder.build();
         Self {
             center,
             dimensions,
