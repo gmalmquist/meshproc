@@ -63,6 +63,21 @@ pub trait FaceLike<T: FaceLike<T> = Self>: Shape + Edgecast {
 
     fn vertex_count(&self) -> usize;
 
+    fn vertices(&self) -> FaceVertexIter<T> {
+        FaceVertexIter {
+            face: self.self_ref(),
+            index: 0,
+        }
+    }
+
+    fn clone_vertices(&self) -> Vec<Pt3> {
+        let mut arr = vec![];
+        for i in 0..self.vertex_count() {
+            arr.push(self.vertex(i).clone());
+        }
+        arr
+    }
+
     fn normal(&self) -> Vec3 {
         let edge_one = self.vertex(1) - self.vertex(0);
         let edge_two = self.vertex(2) - self.vertex(1);
@@ -272,6 +287,25 @@ impl<T: FaceLike<T>> Facecast for T {
     }
 }
 
+pub struct FaceVertexIter<'a, T: FaceLike<T>> {
+    face: &'a dyn FaceLike<T>,
+    index: usize,
+}
+
+impl<'a, T: FaceLike<T>> Iterator for FaceVertexIter<'a, T> {
+    type Item = &'a Pt3;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let index = self.index;
+        if index < self.face.vertex_count() {
+            self.index += 1;
+            Some(self.face.vertex(index))
+        } else {
+            None
+        }
+    }
+}
+
 pub struct FacePointIter<'a, T: FaceLike<T>> {
     face: &'a dyn FaceLike<T>,
     frame: Frame3,
@@ -333,7 +367,7 @@ impl<'a, T: FaceLike<T>> Iterator for FaceEdgeIter<'a, T> {
 }
 
 pub struct Polygon {
-    vertices: Vec<Pt3>,
+    pub vertices: Vec<Pt3>,
 }
 
 impl Polygon {

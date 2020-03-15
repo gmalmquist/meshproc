@@ -9,11 +9,11 @@ use futures::task::SpawnExt;
 
 use meshproc::{geom, threed};
 use meshproc::csg::{CsgObj, ToCsg, BlenderCsgObj};
-use meshproc::geom::{Cube, Polygon, Shape, FaceLike};
+use meshproc::geom::{Cube, Polygon, Shape, FaceLike, Facecast};
 use meshproc::load_mesh_stl;
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
-use meshproc::mesh::Mesh;
+use meshproc::mesh::{Mesh, MeshBuilder};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -87,9 +87,12 @@ fn main() {
 }
 
 fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>> {
+    let mut structures: Vec<Box<dyn ToCsg<BlenderCsgObj>>> = vec![];
+
     let clearance = 1.0;
 
     let up = Vec3::up();
+    let down = Vec3::down();
 
     for face in mesh.faces() {
         if face.normal().dot(&up) < 0.99 {
@@ -102,9 +105,57 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
             continue;
         }
 
+        let mut poly = geom::Polygon::new(face.clone_vertices());
+        for v in &mut poly.vertices {
+            v.z -= 0.001; // Makes sure we don't collide with ourselves for raycasting.
+        }
 
+        let downcast = mesh.facecast(&poly, &down);
+        if downcast.is_none() {
+            // There's nothing below us, that means this face is actually the bottom surface of the
+            // mesh, and we don't want to do anything with it.
+            continue;
+        }
+        let downcast = downcast.unwrap();
+
+        if downcast.distance < clearance {
+            // We're too close to existing geometry below us to warrant generating any internal
+            // support structures.
+            continue;
+        }
+
+        // Let's generate a column under this face!
+
+        let mut mb = MeshBuilder::new();
+
+        // Top face is just the original face shifted down by the clearance.
+        let top_face: Vec<usize> = face.vertices()
+            .map(|v| mb.add_vertex(v.clone() + (down * clearance)))
+            .collect();
+        mb.add_face(top_face.iter().map(|v| *v).collect());
+
+        // Bottom face is the face we raycast (which was offset by a slight delta from the original
+        // face), shifted down by the downcast distance less our clearance.
+        let bottom_face: Vec<usize> = poly.vertices()
+            .map(|v| mb.add_vertex(v.clone() + (down * (downcast.distance - clearance))))
+            .collect();
+        // Note the rev() here- we have to reverse the order of the coordinates to ensure the
+        // normal is correct.
+        mb.add_face(bottom_face.iter().rev().map(|v| *v).collect());
+
+        for i in 0..top_face.len() {
+            let top_a = top_face[i];
+            let top_b = top_face[(i + 1) % top_face.len()];
+            let bot_a = bottom_face[i];
+            let bot_b = bottom_face[(i + 1) % bottom_face.len()];
+
+            mb.add_face(vec![top_a, top_b, bot_b, bot_a]);
+        }
+
+        structures.push(Box::new(mb.build()));
     }
-    unimplemented!();
+
+    structures
 }
 
 fn cube_normal_test() {
