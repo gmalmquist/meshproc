@@ -1,23 +1,29 @@
+use std::cmp::max;
 use std::f64::INFINITY;
 use std::io;
 use std::io::Write;
 
-use byteorder::{WriteBytesExt, LittleEndian};
+use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::geom;
 use crate::geom::HasVertices;
-use crate::threed::{Pt3, Ray3, Vec3, Frame3, Basis3};
 use crate::scalar::FloatRange;
-use std::cmp::max;
+use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
 
 pub struct Mesh {
     pub vertices: Vec<Pt3>,
     pub face_loops: Vec<Vec<usize>>,
     pub source_file: Option<String>,
     pub bounds: (Pt3, Pt3),
+    // implied geometry
     face_normals: Vec<Vec3>,
     face_centroids: Vec<Pt3>,
     vertex_normals: Vec<Vec3>,
+    // adjacency info
+    corners: Vec<RawCorner>,
+    face_corners: Vec<Vec<usize>>,
+    left_corners: Vec<usize>,
+    right_corners: Vec<usize>,
 }
 
 impl Mesh {
@@ -51,9 +57,14 @@ impl Mesh {
             face_normals: vec![],
             face_centroids: vec![],
             vertex_normals: vec![],
+            corners: vec![],
+            face_corners: vec![],
+            left_corners: vec![],
+            right_corners: vec![],
         };
         // NB: Maybe it makes more sense to do this lazily? But I think almost anything we might
         // want to do with a mesh will care about this data.
+        mesh.recalculate_adjacency();
         mesh.recalculate_geometry();
         mesh
     }
@@ -154,6 +165,75 @@ impl Mesh {
         }
     }
 
+    pub fn recalculate_adjacency(&mut self) {
+        let mut vertices_to_faces = vec![];
+
+        for i in 0..self.vertices.len() {
+            vertices_to_faces.push(vec![]);
+        }
+
+        self.corners.clear();
+        self.face_corners.clear();
+        for (i, face_loop) in self.face_loops.iter().enumerate() {
+            self.face_corners.push(vec![]);
+            for v in face_loop {
+                vertices_to_faces[*v].push(i);
+                self.face_corners[i].push(self.corners.len());
+                self.corners.push(RawCorner {
+                    face: i,
+                    vert: *v,
+                })
+            }
+        }
+
+        self.left_corners.clear();
+        self.right_corners.clear();
+
+        for (corner_index, c) in self.corners.iter().enumerate() {
+            let face = &self.face_loops[c.face];
+            let vertex_index = face[c.vert];
+            let prev_vertex_index = face[(c.vert + face.len() - 1) % face.len()];
+            let mut left_corner = corner_index;
+            for adj_face_index in &vertices_to_faces[vertex_index] {
+                if *adj_face_index == c.face {
+                    continue;
+                }
+                let adj_face = &self.face_loops[*adj_face_index];
+                let mut adj_face_vi = 0;
+                for i in 1..adj_face.len() {
+                    if adj_face[i] == vertex_index {
+                        adj_face_vi = i;
+                        break;
+                    }
+                }
+                let adj_next = adj_face[(adj_face_vi + 1) % adj_face.len()];
+                if adj_next == prev_vertex_index {
+                    // We found our left-adjacent corner!
+                    left_corner = self.face_corners[*adj_face_index][adj_face_vi];
+                }
+            }
+            self.left_corners.push(left_corner);
+
+            // This is just for initialization, not the final value.
+            self.right_corners.push(corner_index);
+        }
+
+        for (corner_index, c) in self.corners.iter().enumerate() {
+            if self.right_corners[corner_index] != corner_index {
+                continue; // Was already initialized.
+            }
+            let mut curr = corner_index;
+            loop {
+                let prev = curr;
+                curr = self.left_corners[curr];
+                self.right_corners[curr] = prev;
+                if curr == corner_index {
+                    break;
+                }
+            }
+        }
+    }
+
     pub fn recalculate_geometry(&mut self) {
         self.recalculate_bounds();
         self.recalculate_centroids();
@@ -212,7 +292,7 @@ impl Mesh {
                 // Max with 0 is required, because with floats even after adding the offset there's
                 // a chance we'll get something silly like -0.0001 or -0.0.
                 writer.write_f32::<LittleEndian>((0.0_f64).max(offset.x + point.x) as f32);
-                writer.write_f32::<LittleEndian>((0.0_f64).max(offset.y + point.y) as     f32);
+                writer.write_f32::<LittleEndian>((0.0_f64).max(offset.y + point.y) as f32);
                 writer.write_f32::<LittleEndian>((0.0_f64).max(offset.z + point.z) as f32);
             }
 
@@ -290,6 +370,66 @@ impl geom::Shape for Mesh {
     }
 }
 
+// Used in the internal Mesh representation, but never exposed outside of it (instead, outside code
+// uses Corner).
+struct RawCorner {
+    face: usize,
+    vert: usize,
+}
+
+pub struct Corner<'m> {
+    mesh: &'m Mesh,
+    pub face_index: usize,
+    pub corner_index: usize,
+}
+
+impl<'m> Corner<'m> {
+    fn new(mesh: &'m Mesh, face_index: usize, corner_index: usize) -> Self {
+        assert!(face_index < mesh.face_loops.len());
+        assert!(corner_index < mesh.face_loops[face_index].len());
+        Self {
+            mesh,
+            face_index,
+            corner_index,
+        }
+    }
+
+    /// The vertex index matching this corner.
+    pub fn vertex_index(&self) -> usize {
+        self.mesh.face_loops[self.face_index][self.corner_index]
+    }
+
+    /// The actual geometry of the vertex.
+    pub fn vertex(&self) -> &'m Pt3 {
+        self.mesh.vertex(self.vertex_index()).unwrap()
+    }
+
+    /// Get the next corner moving counter-clockwise around the same face.
+    pub fn next(&self) -> Self {
+        Self::new(self.mesh, self.face_index, (self.corner_index + 1) % self.loop_size())
+    }
+
+    /// Get the previous corner (i.e. the next corner moving clockwise around the same face).
+    pub fn prev(&self) -> Self {
+        let size = self.loop_size();
+        Self::new(self.mesh, self.face_index, (self.corner_index + size - 1) % size)
+    }
+
+    /// Get the next corner rotating counter-clockwise around this vertex.
+    pub fn left(&self) -> Self {
+        unimplemented!()
+    }
+
+    /// Get the next corner rotating clockwise around this vertex.
+    pub fn right(&self) -> Self {
+        unimplemented!()
+    }
+
+    fn loop_size(&self) -> usize {
+        self.mesh.face_loops[self.face_index].len()
+    }
+}
+
 pub struct MeshFace<'m> {
     mesh: &'m Mesh,
     index: usize,
@@ -298,6 +438,10 @@ pub struct MeshFace<'m> {
 impl<'a> MeshFace<'a> {
     pub fn plane(&self) -> geom::Plane {
         geom::Plane::new(self.centroid(), self.normal())
+    }
+
+    pub fn corner(&self, index: usize) -> Corner {
+        Corner::new(self.mesh, self.index, index % self.vertex_count())
     }
 
     pub fn contains(&self, pt: Pt3) -> bool {
