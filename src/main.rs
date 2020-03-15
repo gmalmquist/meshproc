@@ -87,7 +87,7 @@ fn main() {
 }
 
 fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>> {
-
+    
     unimplemented!();
 }
 
