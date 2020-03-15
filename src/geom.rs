@@ -63,6 +63,21 @@ pub trait FaceLike<T: FaceLike<T> = Self>: Shape + Edgecast {
 
     fn vertex_count(&self) -> usize;
 
+    fn vertices(&self) -> FaceVertexIter<T> {
+        FaceVertexIter {
+            face: self.self_ref(),
+            index: 0,
+        }
+    }
+
+    fn clone_vertices(&self) -> Vec<Pt3> {
+        let mut arr = vec![];
+        for i in 0..self.vertex_count() {
+            arr.push(self.vertex(i).clone());
+        }
+        arr
+    }
+
     fn normal(&self) -> Vec3 {
         let edge_one = self.vertex(1) - self.vertex(0);
         let edge_two = self.vertex(2) - self.vertex(1);
@@ -136,6 +151,33 @@ pub trait FaceLike<T: FaceLike<T> = Self>: Shape + Edgecast {
             j_values,
             index: 0,
         }
+    }
+
+    fn area(&self) -> f64 {
+        let count = self.vertex_count();
+        if count < 3 {
+            return 0.;
+        }
+
+        if count == 3 {
+            return (self.vertex(1) - self.vertex(0))
+                .cross(&(self.vertex(2) - self.vertex(0)))
+                .mag() / 2.0;
+        }
+
+        // Implicitly triangulate the face with a pinwheel, and sum the areas of the constituent
+        // triangles.
+        let mut area = 0.0;
+        let centroid = Pt3::centroid(&self.vertices().collect());
+        for i in 0..count {
+            let a = self.vertex(i);
+            let b = self.vertex((i + 1) % count);
+            let c = &centroid;
+
+            let triangle_area = (a - b).cross(&(a - c)).mag() / 2.0;
+            area += triangle_area;
+        }
+        area
     }
 
     /// Used internally to pass self as a dynamic dispatch trait reference.
@@ -272,6 +314,25 @@ impl<T: FaceLike<T>> Facecast for T {
     }
 }
 
+pub struct FaceVertexIter<'a, T: FaceLike<T>> {
+    face: &'a dyn FaceLike<T>,
+    index: usize,
+}
+
+impl<'a, T: FaceLike<T>> Iterator for FaceVertexIter<'a, T> {
+    type Item = &'a Pt3;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let index = self.index;
+        if index < self.face.vertex_count() {
+            self.index += 1;
+            Some(self.face.vertex(index))
+        } else {
+            None
+        }
+    }
+}
+
 pub struct FacePointIter<'a, T: FaceLike<T>> {
     face: &'a dyn FaceLike<T>,
     frame: Frame3,
@@ -333,7 +394,7 @@ impl<'a, T: FaceLike<T>> Iterator for FaceEdgeIter<'a, T> {
 }
 
 pub struct Polygon {
-    vertices: Vec<Pt3>,
+    pub vertices: Vec<Pt3>,
 }
 
 impl Polygon {
