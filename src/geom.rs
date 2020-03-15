@@ -58,8 +58,9 @@ impl Shape for Plane {
     }
 }
 
-pub trait FaceLike<T: FaceLike<T> = Self>: Shape {
+pub trait FaceLike<T: FaceLike<T> = Self>: Shape + Edgecast {
     fn vertex(&self, index: usize) -> &Pt3;
+
     fn vertex_count(&self) -> usize;
 
     fn normal(&self) -> Vec3 {
@@ -185,6 +186,92 @@ impl<T: FaceLike<T>> Shape for T {
     }
 }
 
+pub trait Edgecast {
+    fn edgecast(&self, edge: &Edge, direction: &Vec3) -> Option<RaycastHit>;
+}
+
+impl<T: FaceLike<T>> Edgecast for T {
+    fn edgecast(&self, edge: &Edge, direction: &Vec3) -> Option<RaycastHit> {
+        let direction = direction.clone();
+        let src_hit = self.raycast(&Ray3::new(edge.src.clone(), direction));
+        let dst_hit = self.raycast(&Ray3::new(edge.dst.clone(), direction));
+
+        if let (Some(src), Some(dst)) = (&src_hit, &dst_hit) {
+            return if src.distance < dst.distance {
+                src_hit
+            } else {
+                dst_hit
+            };
+        }
+
+        if src_hit.is_some() {
+            return src_hit;
+        }
+
+        if dst_hit.is_some() {
+            return dst_hit;
+        }
+
+        let mut closest_edge_hit: Option<RaycastHit> = None;
+        for e in self.edges() {
+            if let Some(hit) = e.edgecast(edge, &direction) {
+                if closest_edge_hit.is_none() || closest_edge_hit.as_ref().unwrap().distance > hit.distance {
+                    closest_edge_hit = Some(hit);
+                }
+            }
+        }
+
+        match closest_edge_hit {
+            None => None,
+            Some(hit) => Some(RaycastHit {
+                point: hit.point,
+                distance: hit.distance,
+                normal: self.normal(),
+            })
+        }
+    }
+}
+
+pub trait Facecast {
+    fn facecast<T: FaceLike<T>>(&self, face: &dyn FaceLike<T>, direction: &Vec3) -> Option<RaycastHit>;
+}
+
+impl<T: FaceLike<T>> Facecast for T {
+    fn facecast<U: FaceLike<U>>(&self, face: &dyn FaceLike<U>, direction: &Vec3) -> Option<RaycastHit> {
+        // We just edgecast this face at the other and vice-versa, and take the closest hit between
+        // them. I think this covers all cases, but it's a sort of tricky problem to think about.
+
+        let mut closest: Option<RaycastHit> = None;
+
+        // The other face's edges against self.
+        for edge in face.edges() {
+            if let Some(hit) = self.edgecast(&edge, direction) {
+                if closest.is_none() || closest.as_ref().unwrap().distance > hit.distance {
+                    closest = Some(hit);
+                }
+            }
+        }
+
+        // Backwards: our edges against the face.
+        let reverse_dir = direction.scaled(-1.);
+        for edge in self.edges() {
+            if let Some(hit) = face.edgecast(&edge, &reverse_dir) {
+                if closest.is_none() || closest.as_ref().unwrap().distance > hit.distance {
+                    // We have to tweak the fields in the hit to account for the fact that we're
+                    // raycasting backwards here.
+                    closest = Some(RaycastHit {
+                        point: hit.point + (direction.scaled(hit.distance)),
+                        distance: hit.distance,
+                        normal: self.normal(),
+                    });
+                }
+            }
+        }
+
+        closest
+    }
+}
+
 pub struct FacePointIter<'a, T: FaceLike<T>> {
     face: &'a dyn FaceLike<T>,
     frame: Frame3,
@@ -212,7 +299,6 @@ impl<'a, T: FaceLike<T>> Iterator for FacePointIter<'a, T> {
                 return Some(result);
             }
         }
-        None
     }
 }
 
@@ -301,8 +387,10 @@ impl<'a> Edge<'a> {
             dst_dist2.sqrt()
         };
     }
+}
 
-    pub fn edgecast(&self, edge: &Edge, direction: &Vec3) -> Option<RaycastHit> {
+impl<'a> Edgecast for Edge<'a> {
+    fn edgecast(&self, edge: &Edge, direction: &Vec3) -> Option<RaycastHit> {
         let mut axis = self.vector().cross(&edge.vector()).normalized();
 
         // A     Q  A = edge.src
