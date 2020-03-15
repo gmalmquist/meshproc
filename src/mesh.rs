@@ -6,7 +6,7 @@ use std::io::Write;
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::geom;
-use crate::geom::HasVertices;
+use crate::geom::FaceLike;
 use crate::scalar::FloatRange;
 use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
 use std::collections::HashSet;
@@ -472,79 +472,18 @@ pub struct MeshFace<'m> {
 }
 
 impl<'a> MeshFace<'a> {
-    pub fn plane(&self) -> geom::Plane {
-        geom::Plane::new(self.centroid(), self.normal())
-    }
-
     pub fn corner(&self, index: usize) -> Corner {
         self.mesh.corner(self.index, index)
     }
-
-    pub fn contains(&self, pt: Pt3) -> bool {
-        let normal = self.normal();
-        let centroid = self.centroid();
-        for edge in self.edges() {
-            let v = edge.vector();
-            let edge_normal = v ^ normal;
-            let pt_side = edge_normal * (pt - edge.src) >= 0.0;
-            let centroid_side = edge_normal * (centroid - edge.src) >= 0.0;
-            if pt_side != centroid_side {
-                return false;
-            }
-        }
-        true
-    }
-
-    pub fn points(&self, resolution: f64) -> FacePointIter {
-        let basis = Basis3::from_normal(self.normal());
-        let frame = Frame3::new(self.centroid(), basis);
-
-        let mut min = (None, None);
-        let mut max = (None, None);
-        for i in 0..self.vertex_count() {
-            let pt = self.vertex(i);
-            let local = frame.project(pt);
-            if min.0.is_none() || min.0.unwrap() < local.i {
-                min.0 = Some(local.i);
-            }
-            if max.0.is_none() || max.0.unwrap() > local.i {
-                max.0 = Some(local.i);
-            }
-            if min.1.is_none() || min.1.unwrap() < local.j {
-                min.1 = Some(local.j);
-            }
-            if max.1.is_none() || max.1.unwrap() > local.j {
-                max.1 = Some(local.j);
-            }
-        }
-
-        let min = (min.0.unwrap(), min.1.unwrap());
-        let max = (max.0.unwrap(), max.1.unwrap());
-
-        let i_values = FloatRange::from_step_size(min.0, max.0, resolution).collect();
-        let j_values = FloatRange::from_step_size(min.1, max.1, resolution).collect();
-
-        FacePointIter {
-            face: self,
-            frame,
-            i_values,
-            j_values,
-            index: 0,
-        }
-    }
 }
 
-impl<'a> geom::HasVertices for MeshFace<'a> {
+impl<'a> geom::FaceLike<MeshFace<'a>> for MeshFace<'a> {
     fn vertex(&self, index: usize) -> &Pt3 {
         &self.mesh.vertices[self.mesh.face_loops[self.index][index]]
     }
 
     fn vertex_count(&self) -> usize {
         self.mesh.face_loops[self.index].len()
-    }
-
-    fn edges(&self) -> geom::FaceEdgeIter {
-        geom::FaceEdgeIter::new(self)
     }
 
     fn normal(&self) -> Vec3 {
@@ -554,6 +493,10 @@ impl<'a> geom::HasVertices for MeshFace<'a> {
     fn centroid(&self) -> Pt3 {
         self.mesh.face_centroid(self.index).expect("Face centroid wasn't calculated").clone()
     }
+
+    fn self_ref(&self) -> &dyn FaceLike<MeshFace<'a>> {
+        self
+    }
 }
 
 impl<'a> geom::Shape for MeshFace<'a> {
@@ -561,7 +504,7 @@ impl<'a> geom::Shape for MeshFace<'a> {
         let hit_on_plane = self.plane().raycast(ray);
         return match hit_on_plane {
             Some(hit) => {
-                if self.contains(hit.point) {
+                if self.contains(&hit.point) {
                     Some(hit)
                 } else {
                     None
@@ -582,7 +525,7 @@ impl<'a> geom::Shape for MeshFace<'a> {
         // If the projection of the point onto the plane of this polygon is contained within the
         // boundaries of this polygon, that projection will be the closest point.
         let projection = self.plane().project(pt);
-        if self.contains(projection) {
+        if self.contains(&projection) {
             return sign * (projection - pt).mag();
         }
 
@@ -613,31 +556,6 @@ impl<'a> Iterator for MeshFaceIter<'a> {
         let next = self.mesh.face(self.index);
         self.index += 1;
         next
-    }
-}
-
-pub struct FacePointIter<'a> {
-    face: &'a MeshFace<'a>,
-    frame: Frame3,
-    i_values: Vec<f64>,
-    j_values: Vec<f64>,
-    index: usize,
-}
-
-impl<'a> Iterator for FacePointIter<'a> {
-    type Item = Pt3;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let i_index = self.index / self.i_values.len();
-        let j_index = self.index % self.i_values.len();
-        self.index += 1;
-        if i_index >= self.i_values.len() || j_index >= self.j_values.len() {
-            return None;
-        }
-        let local = self
-            .frame
-            .local(self.i_values[i_index], self.j_values[j_index], 0.);
-        Some(self.frame.unproject(&local))
     }
 }
 

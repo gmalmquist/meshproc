@@ -2,6 +2,8 @@ use crate::scalar::FloatRange;
 use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
 use crate::mesh::{Mesh, MeshFaceIter, MeshFace, MeshBuilder};
 use std::f64::INFINITY;
+use std::ops::Div;
+use std::panic::resume_unwind;
 
 pub trait Shape {
     fn raycast(&self, ray: &Ray3) -> Option<RaycastHit>;
@@ -55,10 +57,9 @@ impl Shape for Plane {
     }
 }
 
-pub trait HasVertices {
+pub trait FaceLike<T: FaceLike<T> = Self> {
     fn vertex(&self, index: usize) -> &Pt3;
     fn vertex_count(&self) -> usize;
-    fn edges(&self) -> FaceEdgeIter;
 
     fn normal(&self) -> Vec3 {
         let edge_one = self.vertex(1) - self.vertex(0);
@@ -73,44 +74,110 @@ pub trait HasVertices {
             .map(|&i| self.vertex(i))
             .collect())
     }
-}
 
-pub struct Face<'a> {
-    pub vertices: Vec<&'a Pt3>,
-}
-
-impl<'a> Face<'a> {
-    pub fn new(vertices: Vec<&'a Pt3>) -> Self {
-        if vertices.len() < 3 {
-            panic!("Cannot create a face with less than three vertices!");
+    fn contains(&self, pt: &Pt3) -> bool {
+        let normal = self.normal();
+        let centroid = self.centroid();
+        for edge in self.edges() {
+            let v = edge.vector();
+            let edge_normal = v ^ normal;
+            let pt_side = edge_normal * (pt - edge.src) >= 0.0;
+            let centroid_side = edge_normal * (centroid - edge.src) >= 0.0;
+            if pt_side != centroid_side {
+                return false;
+            }
         }
-        Self {
-            vertices,
+        true
+    }
+
+    fn plane(&self) -> Plane {
+        Plane::new(self.centroid(), self.normal())
+    }
+
+    fn edges(&self) -> FaceEdgeIter<T> {
+        FaceEdgeIter::new(self.self_ref())
+    }
+
+    fn points(&self, resolution: f64) -> FacePointIter<T> {
+        let basis = Basis3::from_normal(self.normal());
+        let frame = Frame3::new(self.centroid(), basis);
+
+        let mut min = (None, None);
+        let mut max = (None, None);
+        for i in 0..self.vertex_count() {
+            let pt = self.vertex(i);
+            let local = frame.project(pt);
+            if min.0.is_none() || min.0.unwrap() < local.i {
+                min.0 = Some(local.i);
+            }
+            if max.0.is_none() || max.0.unwrap() > local.i {
+                max.0 = Some(local.i);
+            }
+            if min.1.is_none() || min.1.unwrap() < local.j {
+                min.1 = Some(local.j);
+            }
+            if max.1.is_none() || max.1.unwrap() > local.j {
+                max.1 = Some(local.j);
+            }
+        }
+
+        let min = (min.0.unwrap(), min.1.unwrap());
+        let max = (max.0.unwrap(), max.1.unwrap());
+
+        let i_values = FloatRange::from_step_size(min.0, max.0, resolution).collect();
+        let j_values = FloatRange::from_step_size(min.1, max.1, resolution).collect();
+
+        FacePointIter {
+            face: self.self_ref(),
+            frame,
+            i_values,
+            j_values,
+            index: 0,
         }
     }
+
+    /// Used internally to pass self as a dynamic dispatch trait reference.
+    fn self_ref(&self) -> &dyn FaceLike<T>;
 }
 
-impl<'a> HasVertices for Face<'a> {
-    fn vertex(&self, index: usize) -> &Pt3 {
-        self.vertices[index]
-    }
+pub struct FacePointIter<'a, T: FaceLike<T>> {
+    face: &'a dyn FaceLike<T>,
+    frame: Frame3,
+    i_values: Vec<f64>,
+    j_values: Vec<f64>,
+    index: usize,
+}
 
-    fn vertex_count(&self) -> usize {
-        self.vertices.len()
-    }
+impl<'a, T: FaceLike<T>> Iterator for FacePointIter<'a, T> {
+    type Item = Pt3;
 
-    fn edges(&self) -> FaceEdgeIter {
-        FaceEdgeIter::new(self)
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let i_index = self.index / self.i_values.len();
+            let j_index = self.index % self.i_values.len();
+            self.index += 1;
+            if i_index >= self.i_values.len() || j_index >= self.j_values.len() {
+                return None;
+            }
+            let local = self
+                .frame
+                .local(self.i_values[i_index], self.j_values[j_index], 0.);
+            let result = self.frame.unproject(&local);
+            if self.face.contains(&result) {
+                return Some(result);
+            }
+        }
+        None
     }
 }
 
-pub struct FaceEdgeIter<'a> {
-    face: &'a dyn HasVertices,
+pub struct FaceEdgeIter<'a, T: FaceLike<T>> {
+    face: &'a dyn FaceLike<T>,
     edge_index: usize,
 }
 
-impl<'a> FaceEdgeIter<'a> {
-    pub fn new(face: &'a dyn HasVertices) -> Self {
+impl<'a, T: FaceLike<T>> FaceEdgeIter<'a, T> {
+    pub fn new(face: &'a dyn FaceLike<T>) -> Self {
         Self {
             face,
             edge_index: 0,
@@ -118,7 +185,7 @@ impl<'a> FaceEdgeIter<'a> {
     }
 }
 
-impl<'a> Iterator for FaceEdgeIter<'a> {
+impl<'a, T: FaceLike<T>> Iterator for FaceEdgeIter<'a, T> {
     type Item = Edge<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -150,20 +217,12 @@ impl Polygon {
         }
     }
 
-    pub fn plane(&self) -> Plane {
-        Plane::new(self.centroid(), self.normal())
-    }
-
-    pub fn contains(&self, pt: Pt3) -> bool {
-        self.face().contains(pt)
-    }
-
     pub fn face(&self) -> MeshFace {
         self.mesh.face(0).unwrap()
     }
 }
 
-impl HasVertices for Polygon {
+impl FaceLike<Polygon> for Polygon {
     fn vertex(&self, index: usize) -> &Pt3 {
         // NB: This works because the mesh contains exactly one face, so the mesh vertex indices
         // are the same as the face vertex indices.
@@ -174,8 +233,8 @@ impl HasVertices for Polygon {
         self.face().vertex_count()
     }
 
-    fn edges(&self) -> FaceEdgeIter {
-        FaceEdgeIter::new(self)
+    fn self_ref(&self) -> &dyn FaceLike<Polygon> {
+        self
     }
 }
 
@@ -218,6 +277,73 @@ impl<'a> Edge<'a> {
         } else {
             dst_dist2.sqrt()
         };
+    }
+
+    pub fn edgecast(&self, edge: &Edge, direction: &Vec3) -> Option<RaycastHit> {
+        let mut axis = self.vector().cross(&edge.vector()).normalized();
+
+        // A     Q  A = edge.src
+        //  \_  /   B = edge.dst
+        //    \_    Q = self.src
+        //   /  \   R = self.dst
+        // R     B
+
+
+        let aq = self.src - edge.src;
+        let ortho_dir = direction.on_axis(&axis);
+
+        if ortho_dir.mag2() == 0.0 {
+            return None; // Lines are not moving at all relative to each other.
+        }
+
+        // Compute the time that the edges would collide, if they will collide.
+        let t = aq.dot(&axis) / direction.dot(&axis);
+        if t < 0. {
+            return None; // Collision is back in time, edges are moving away from each other.
+        }
+
+        // Move the edge forward in time to see where they'll be at the potential point of collision.
+        let edge1: (Pt3, Pt3) = (
+            edge.src.clone() + direction.scaled(t),
+            edge.dst.clone() + direction.scaled(t)
+        );
+        let edge2 = (self.src, self.dst);
+
+        let edge1_normal = edge.vector().cross(&axis).normalized();
+
+        // Now we just raycast edge1 at the plane of edge2.
+        // (A + AB*d - R)*N = 0
+        // (RA + AB*d)*N = 0
+        // RA*N + AB*N d = 0
+        // d = AR*N / AB*N
+        let ab = edge.vector();
+        let ab_norm = ab.dot(&edge1_normal);
+        if ab_norm == 0.0 {
+            return None; // Line segments are parallel.
+        }
+        let d = (edge2.0 - edge1.0).dot(&edge1_normal) / ab_norm;
+        if d < 0. {
+            return None; // Line segments don't overlap.
+        }
+
+        // Point of collision on edge2's infinite line.
+        // Now we just need to see if it's within the actual bounds of edge2.
+        let poc = ab.scaled(d) + edge1.0;
+
+        if (poc - self.src).dot(&(self.dst - self.src)) < 0. {
+            // Point is before the beginning of the line segment.
+            return None;
+        }
+        if (poc - self.dst).dot(&(self.src - self.dst)) < 0. {
+            // Point is after the end of the line segment.
+            return None;
+        }
+
+        Some(RaycastHit {
+            point: poc,
+            distance: t,
+            normal: axis,
+        })
     }
 }
 

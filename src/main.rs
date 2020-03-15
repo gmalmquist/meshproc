@@ -9,7 +9,7 @@ use futures::task::SpawnExt;
 
 use meshproc::{geom, threed};
 use meshproc::csg::{CsgObj, ToCsg, BlenderCsgObj};
-use meshproc::geom::{Cube, Polygon, Shape, HasVertices};
+use meshproc::geom::{Cube, Polygon, Shape, FaceLike};
 use meshproc::load_mesh_stl;
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
@@ -87,7 +87,23 @@ fn main() {
 }
 
 fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>> {
-    
+    let clearance = 1.0;
+
+    let up = Vec3::up();
+
+    for face in mesh.faces() {
+        if face.normal().dot(&up) < 0.99 {
+            // Isn't horizontal.
+            continue;
+        }
+
+        if face.centroid().z < mesh.bounds.0.z + clearance {
+            // Is too close to the bottom of the mesh to require support.
+            continue;
+        }
+
+
+    }
     unimplemented!();
 }
 
