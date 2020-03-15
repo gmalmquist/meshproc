@@ -205,7 +205,9 @@ impl Mesh {
             let face = &self.face_loops[c.face];
             let vertex_index = face[c.vert];
             let prev_vertex_index = face[(c.vert + face.len() - 1) % face.len()];
+            let next_vertex_index = face[(c.vert + 1) % face.len()];
             let mut left_corner = corner_index;
+            let mut right_corner = corner_index;
             for adj_face_index in &vertices_to_faces[vertex_index] {
                 if *adj_face_index == c.face {
                     continue;
@@ -219,17 +221,34 @@ impl Mesh {
                     }
                 }
                 let adj_next = adj_face[(adj_face_vi + 1) % adj_face.len()];
+                let adj_prev = adj_face[(adj_face_vi + adj_face.len() - 1) % adj_face.len()];
+
                 if adj_next == prev_vertex_index {
-                    // We found our left-adjacent corner!
+                    // +--------+  n = corner of adj_next
+                    // |    n _/|  p = corner of prev_vertex_index
+                    // |    _/ p|  c = corner_index
+                    // |L _/    |  L = left corner index (what we're looking for)
+                    // |_/c     |
+                    // +--------+
                     left_corner = self.face_corners[*adj_face_index][adj_face_vi];
+                }
+
+                if adj_prev == next_vertex_index {
+                    // +--------+  n = corner of next_vertex_index
+                    // |    n _/|  p = corner of adj_prev
+                    // |    _/ p|  c = corner_index
+                    // |c _/    |  R = right corner index (what we're looking for)
+                    // |_/R     |
+                    // +--------+
+                    right_corner = self.face_corners[*adj_face_index][adj_face_vi];
+                }
+
+                if left_corner != corner_index && right_corner != corner_index {
+                    break; // Done!
                 }
             }
             self.left_corners[corner_index] = left_corner;
-            self.right_corners[left_corner] = corner_index;
-
-            eprintln!("L({:#?}) = {:#?}",
-                      Corner::new(self, corner_index),
-                      Corner::new(self, left_corner));
+            self.right_corners[corner_index] = right_corner;
         }
     }
 
@@ -434,8 +453,7 @@ impl<'a> PartialEq for Corner<'a> {
     }
 }
 
-impl<'a> Eq for Corner<'a> {
-}
+impl<'a> Eq for Corner<'a> {}
 
 impl<'a> Debug for Corner<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
@@ -720,32 +738,54 @@ mod tests {
     }
 
     #[test]
-    pub fn left_adjacency() {
+    pub fn left_adjacency_no_adjacent_triangles() {
         let m = TwoTriangles::new();
 
-        // Check left adjacency
-        assert_eq!(m.c_a().left(), m.c_a()); // has no adjacent faces.
-        assert_eq!(m.c_adb().left(), m.c_adb()); // exterior
-        assert_eq!(m.c_abd().left(), m.c_abd()); // exterior
-        assert_eq!(m.c_c().left(), m.c_c()); // no adjacent faces
+        // No adjacent faces is indicated by left(c) = c.
+        assert_eq!(m.c_a().left(), m.c_a());
+        assert_eq!(m.c_c().left(), m.c_c());
+    }
 
-        // actual lefts.
-        assert_eq!(m.c_bdc().left(), m.c_adb());
+    #[test]
+    pub fn left_adjacency_happy_path() {
+        let m = TwoTriangles::new();
+
+        assert_eq!(m.c_adb().left(), m.c_bdc());
         assert_eq!(m.c_cbd().left(), m.c_abd());
     }
 
+    #[test]
+    pub fn left_adjacency_no_left_adjacent_triangles() {
+        let m = TwoTriangles::new();
+
+        // No adjacent faces is indicated by left(c) = c.
+        assert_eq!(m.c_bdc().left(), m.c_bdc());
+        assert_eq!(m.c_abd().left(), m.c_abd());
+    }
 
     #[test]
-    pub fn right_adjacency() {
+    pub fn right_adjacency_happy_path() {
         let m = TwoTriangles::new();
 
         // Check right adjacency
-        assert_eq!(m.c_adb().right(), m.c_bdc());
+        assert_eq!(m.c_bdc().right(), m.c_adb(),
+                   "R({:#?}) should be {:#?}", m.c_bdc(), m.c_adb());
         assert_eq!(m.c_abd().right(), m.c_cbd());
+    }
+
+    #[test]
+    pub fn right_adjacency_no_adjacent() {
+        let m = TwoTriangles::new();
 
         assert_eq!(m.c_a().right(), m.c_a()); // has no adjacent faces.
         assert_eq!(m.c_c().right(), m.c_c()); // no adjacent faces
-        assert_eq!(m.c_bdc().right(), m.c_bdc()); // exterior
+    }
+
+    #[test]
+    pub fn right_adjacency_no_right_adjacent() {
+        let m = TwoTriangles::new();
+
+        assert_eq!(m.c_adb().right(), m.c_adb()); // exterior
         assert_eq!(m.c_cbd().right(), m.c_cbd()); // exterior
     }
 
@@ -777,7 +817,11 @@ mod tests {
 
             let mesh = builder.build();
             Self {
-                a, b, d, c, mesh
+                a,
+                b,
+                d,
+                c,
+                mesh,
             }
         }
 
