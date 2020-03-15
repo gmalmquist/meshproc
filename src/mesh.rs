@@ -6,7 +6,7 @@ use std::io::Write;
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::geom;
-use crate::geom::FaceLike;
+use crate::geom::{FaceLike, RaycastHit};
 use crate::scalar::FloatRange;
 use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
 use std::collections::HashSet;
@@ -385,6 +385,34 @@ impl geom::Shape for Mesh {
             }
         }
         distance
+    }
+}
+
+impl geom::Edgecast for Mesh {
+    fn edgecast(&self, edge: &geom::Edge, direction: &Vec3) -> Option<geom::RaycastHit> {
+        let mut closest: Option<RaycastHit> = None;
+        for face in self.faces() {
+            if let Some(hit) = face.edgecast(edge, direction) {
+                if closest.is_none() || closest.as_ref().unwrap().distance > hit.distance {
+                    closest = Some(hit);
+                }
+            }
+        }
+        closest
+    }
+}
+
+impl geom::Facecast for Mesh {
+    fn facecast<T: FaceLike<T>>(&self, face: &dyn FaceLike<T>, direction: &Vec3) -> Option<RaycastHit> {
+        let mut closest: Option<RaycastHit> = None;
+        for f in self.faces() {
+            if let Some(hit) = f.facecast(face, direction) {
+                if closest.is_none() || closest.as_ref().unwrap().distance > hit.distance {
+                    closest = Some(hit);
+                }
+            }
+        }
+        closest
     }
 }
 

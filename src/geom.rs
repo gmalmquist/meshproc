@@ -232,12 +232,12 @@ impl<T: FaceLike<T>> Edgecast for T {
     }
 }
 
-pub trait Facecast<T: FaceLike<T>> {
-    fn facecast(&self, face: &dyn FaceLike<T>, direction: &Vec3) -> Option<RaycastHit>;
+pub trait Facecast {
+    fn facecast<T: FaceLike<T>>(&self, face: &dyn FaceLike<T>, direction: &Vec3) -> Option<RaycastHit>;
 }
 
-impl<T: FaceLike<T>, U: FaceLike<U>> Facecast<U> for T {
-    fn facecast(&self, face: &dyn FaceLike<U>, direction: &Vec3) -> Option<RaycastHit> {
+impl<T: FaceLike<T>> Facecast for T {
+    fn facecast<U: FaceLike<U>>(&self, face: &dyn FaceLike<U>, direction: &Vec3) -> Option<RaycastHit> {
         // We just edgecast this face at the other and vice-versa, and take the closest hit between
         // them. I think this covers all cases, but it's a sort of tricky problem to think about.
 
