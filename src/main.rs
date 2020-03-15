@@ -8,7 +8,7 @@ use futures::io::{Error, ErrorKind};
 use futures::task::SpawnExt;
 
 use meshproc::{geom, threed};
-use meshproc::csg::{CsgObj, ToCsg};
+use meshproc::csg::{CsgObj, ToCsg, BlenderCsgObj};
 use meshproc::geom::{Cube, Polygon, Shape, HasVertices};
 use meshproc::load_mesh_stl;
 use meshproc::scalar::FloatRange;
@@ -60,6 +60,11 @@ fn main() {
                 csg = csg.difference(&pillar.to_csg());
             }
         },
+        "internal-plateaus" => {
+            for plateau in generate_plateau_supports(Arc::clone(&mesh)) {
+                csg = csg.difference(&plateau.to_csg());
+            }
+        },
         "roundtrip" => {
             // no-op, we just leave it alone.
         },
@@ -81,8 +86,9 @@ fn main() {
     }
 }
 
-fn generate_plateau_supports() {
+fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>> {
 
+    unimplemented!();
 }
 
 fn cube_normal_test() {

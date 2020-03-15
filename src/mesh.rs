@@ -460,3 +460,61 @@ impl<'a> Iterator for FacePointIter<'a> {
         Some(self.frame.unproject(&local))
     }
 }
+
+#[derive(Clone)]
+pub struct MeshBuilder {
+    vertices: Vec<Pt3>,
+    face_loops: Vec<Vec<usize>>,
+    source_file: Option<String>,
+    dedup_dist: f64,
+}
+
+impl MeshBuilder {
+    pub fn new() -> Self {
+        Self {
+            vertices: vec![],
+            face_loops: vec![],
+            source_file: None,
+            dedup_dist: std::f32::MIN_POSITIVE as f64,
+        }
+    }
+
+    pub fn dedup_threshold(&mut self, threshold: f64) {
+        self.dedup_dist = threshold;
+    }
+
+    pub fn source_file(&mut self, path: String) {
+        self.source_file = Some(path);
+    }
+
+    pub fn add_vertex(&mut self, pt: Pt3) -> usize {
+        let index = self.vertices.len();
+        self.vertices.push(pt);
+        index
+    }
+
+    pub fn add_vertex_dedup(&mut self, pt: Pt3) -> usize {
+        let mut delta = Pt3::zero();
+        for (i, v) in self.vertices.iter().enumerate() {
+            delta.set(&pt);
+            delta.x -= v.x;
+            delta.y -= v.y;
+            delta.z -= v.z;
+
+            if delta.x.abs() < self.dedup_dist
+                && delta.y.abs() < self.dedup_dist
+                && delta.z.abs() < self.dedup_dist {
+                return i;
+            }
+        }
+        self.add_vertex(pt)
+    }
+
+    pub fn add_face(&mut self, vertices: Vec<usize>) {
+        self.face_loops.push(vertices);
+    }
+
+    pub fn build(self) -> Mesh {
+        Mesh::new(self.vertices, self.face_loops, self.source_file)
+    }
+}
