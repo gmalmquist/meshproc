@@ -103,6 +103,11 @@ impl Mesh {
         self.face_centroids.get(index)
     }
 
+    pub fn corner(&self, face_index: usize, face_corner: usize) -> Corner {
+        let face = &self.face_corners[face_index];
+        Corner::new(self, face[face_corner % face.len()])
+    }
+
     pub fn recalculate_normals(&mut self) {
         self.face_normals.clear();
         for (_index, lp) in self.face_loops.iter().enumerate() {
@@ -379,24 +384,23 @@ struct RawCorner {
 
 pub struct Corner<'m> {
     mesh: &'m Mesh,
-    pub face_index: usize,
-    pub corner_index: usize,
+    corner_index: usize,
+    raw_corner: &'m RawCorner,
 }
 
 impl<'m> Corner<'m> {
-    fn new(mesh: &'m Mesh, face_index: usize, corner_index: usize) -> Self {
-        assert!(face_index < mesh.face_loops.len());
-        assert!(corner_index < mesh.face_loops[face_index].len());
+    fn new(mesh: &'m Mesh, corner_index: usize) -> Self {
+        assert!(corner_index < mesh.corners.len());
         Self {
             mesh,
-            face_index,
             corner_index,
+            raw_corner: &mesh.corners[corner_index],
         }
     }
 
     /// The vertex index matching this corner.
     pub fn vertex_index(&self) -> usize {
-        self.mesh.face_loops[self.face_index][self.corner_index]
+        self.mesh.face_loops[self.raw_corner.face][self.raw_corner.vert]
     }
 
     /// The actual geometry of the vertex.
@@ -406,27 +410,27 @@ impl<'m> Corner<'m> {
 
     /// Get the next corner moving counter-clockwise around the same face.
     pub fn next(&self) -> Self {
-        Self::new(self.mesh, self.face_index, (self.corner_index + 1) % self.loop_size())
+        self.mesh.corner(self.raw_corner.face, (self.raw_corner.vert + 1) % self.loop_size())
     }
 
     /// Get the previous corner (i.e. the next corner moving clockwise around the same face).
     pub fn prev(&self) -> Self {
         let size = self.loop_size();
-        Self::new(self.mesh, self.face_index, (self.corner_index + size - 1) % size)
+        self.mesh.corner(self.raw_corner.face, (self.raw_corner.vert + size - 1) % size)
     }
 
     /// Get the next corner rotating counter-clockwise around this vertex.
     pub fn left(&self) -> Self {
-        unimplemented!()
+        Self::new(self.mesh, self.mesh.left_corners[self.corner_index])
     }
 
     /// Get the next corner rotating clockwise around this vertex.
     pub fn right(&self) -> Self {
-        unimplemented!()
+        Self::new(self.mesh, self.mesh.right_corners[self.corner_index])
     }
 
     fn loop_size(&self) -> usize {
-        self.mesh.face_loops[self.face_index].len()
+        self.mesh.face_loops[self.raw_corner.face].len()
     }
 }
 
@@ -441,7 +445,7 @@ impl<'a> MeshFace<'a> {
     }
 
     pub fn corner(&self, index: usize) -> Corner {
-        Corner::new(self.mesh, self.index, index % self.vertex_count())
+        self.mesh.corner(self.index, index)
     }
 
     pub fn contains(&self, pt: Pt3) -> bool {
