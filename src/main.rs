@@ -14,6 +14,7 @@ use meshproc::load_mesh_stl;
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
 use meshproc::mesh::{Mesh, MeshBuilder};
+use std::cmp::Ordering;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -94,8 +95,10 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
     let up = Vec3::up();
     let down = Vec3::down();
 
-    for face in mesh.faces() {
-        if face.normal().dot(&up) < 0.99 {
+    let mut faces_to_support = vec![];
+
+    for (i, face) in mesh.faces().enumerate() {
+        if face.normal().dot(&up).abs() < 0.99 {
             // Isn't horizontal.
             continue;
         }
@@ -118,13 +121,22 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
         }
         let downcast = downcast.unwrap();
 
-        if downcast.distance < clearance {
+        if downcast.distance < clearance * 2. {
             // We're too close to existing geometry below us to warrant generating any internal
             // support structures.
             continue;
         }
 
+        faces_to_support.push((face, downcast.distance));
+    }
+
+    let face = faces_to_support.iter()
+        .max_by(|(a,_), (b, _)| a.area().partial_cmp(&b.area())
+            .unwrap_or(Ordering::Equal));
+
+    if let Some((face, distance)) = face {
         // Let's generate a column under this face!
+        eprintln!("Generating a plateau for {:#?}", face.clone_vertices());
 
         let mut mb = MeshBuilder::new();
 
@@ -134,10 +146,9 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
             .collect();
         mb.add_face(top_face.iter().map(|v| *v).collect());
 
-        // Bottom face is the face we raycast (which was offset by a slight delta from the original
-        // face), shifted down by the downcast distance less our clearance.
-        let bottom_face: Vec<usize> = poly.vertices()
-            .map(|v| mb.add_vertex(v.clone() + (down * (downcast.distance - clearance))))
+        // Bottom face is original face, shifted down by the downcast distance less our clearance.
+        let bottom_face: Vec<usize> = face.vertices()
+            .map(|v| mb.add_vertex(v.clone() + (down * (distance - clearance))))
             .collect();
         // Note the rev() here- we have to reverse the order of the coordinates to ensure the
         // normal is correct.
@@ -153,6 +164,7 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
         }
 
         structures.push(Box::new(mb.build()));
+
     }
 
     structures

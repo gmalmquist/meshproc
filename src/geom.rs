@@ -153,6 +153,33 @@ pub trait FaceLike<T: FaceLike<T> = Self>: Shape + Edgecast {
         }
     }
 
+    fn area(&self) -> f64 {
+        let count = self.vertex_count();
+        if count < 3 {
+            return 0.;
+        }
+
+        if count == 3 {
+            return (self.vertex(1) - self.vertex(0))
+                .cross(&(self.vertex(2) - self.vertex(0)))
+                .mag() / 2.0;
+        }
+
+        // Implicitly triangulate the face with a pinwheel, and sum the areas of the constituent
+        // triangles.
+        let mut area = 0.0;
+        let centroid = Pt3::centroid(&self.vertices().collect());
+        for i in 0..count {
+            let a = self.vertex(i);
+            let b = self.vertex((i + 1) % count);
+            let c = &centroid;
+
+            let triangle_area = (a - b).cross(&(a - c)).mag() / 2.0;
+            area += triangle_area;
+        }
+        area
+    }
+
     /// Used internally to pass self as a dynamic dispatch trait reference.
     fn self_ref(&self) -> &dyn FaceLike<T>;
 }
