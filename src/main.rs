@@ -109,7 +109,11 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
         }
 
         let mut poly = geom::Polygon::new(face.clone_vertices());
+
+        let centroid = poly.centroid();
+
         for v in &mut poly.vertices {
+            *v = *v + (centroid - *v).normalized();
             v.z -= 0.001; // Makes sure we don't collide with ourselves for raycasting.
         }
 
@@ -127,7 +131,9 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
             continue;
         }
 
-        faces_to_support.push((face, downcast.distance));
+        eprint!("Face {} may have a plateau.\r", i);
+
+        faces_to_support.push((poly, downcast.distance));
     }
 
     let face = faces_to_support.iter()
