@@ -113,6 +113,7 @@ impl BlenderCsgObj {
         let mut buffer: Vec<u8> = vec![];
         mesh.write_stl(&mut buffer).unwrap();
 
+        let min_bounds = mesh.bounds.0;
         Self {
             create_python_code: Box::new(move |variable_name| {
                 let temp_stl_file = format!("{}.stl", random_id());
@@ -124,6 +125,8 @@ impl BlenderCsgObj {
                         .join(", ")),
                 ];
                 code.push((Self::stl(&temp_stl_file).create_python_code)(variable_name));
+                code.push(format!("{}.location = ({}, {}, {})",
+                                  variable_name, min_bounds.x, min_bounds.y, min_bounds.z));
                 code.push(format!("os.remove(r'{}')", temp_stl_file));
                 code.join("\n")
             }),
@@ -284,7 +287,7 @@ impl CsgObj for BlenderCsgObj {
                         }
                         if stderr.trim().len() > 0 {
                             eprintln!("Since stderr isn't empty, script may have been invalid.");
-                            return Err(io::Error::new(ErrorKind::InvalidInput, stderr))
+                            return Err(io::Error::new(ErrorKind::InvalidInput, stderr));
                         }
                     }
                     Ok(())
