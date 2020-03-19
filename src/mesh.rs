@@ -1,5 +1,7 @@
 use std::cmp::max;
+use std::collections::HashSet;
 use std::f64::INFINITY;
+use std::fmt::Debug;
 use std::io;
 use std::io::Write;
 
@@ -9,8 +11,6 @@ use crate::geom;
 use crate::geom::{FaceLike, RaycastHit};
 use crate::scalar::FloatRange;
 use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
-use std::collections::HashSet;
-use std::fmt::Debug;
 
 pub struct Mesh {
     pub vertices: Vec<Pt3>,
@@ -105,9 +105,14 @@ impl Mesh {
         self.face_centroids.get(index)
     }
 
-    pub fn corner(&self, face_index: usize, face_corner: usize) -> Corner {
+    pub fn corner(&self, index: usize) -> Corner {
+        assert!(index < self.corners.len());
+        Corner::new(self, index)
+    }
+
+    pub fn corner_for(&self, face_index: usize, face_corner: usize) -> Corner {
         let face = &self.face_corners[face_index];
-        Corner::new(self, face[face_corner % face.len()])
+        self.corner(face[face_corner % face.len()])
     }
 
     pub fn recalculate_normals(&mut self) {
@@ -175,7 +180,7 @@ impl Mesh {
     pub fn recalculate_adjacency(&mut self) {
         let mut vertices_to_faces = vec![];
 
-        for i in 0..self.vertices.len() {
+        for _ in 0..self.vertices.len() {
             vertices_to_faces.push(vec![]);
         }
 
@@ -439,6 +444,11 @@ impl<'m> Corner<'m> {
         }
     }
 
+    /// Index which uniquely identifies this corner in the mesh.
+    pub fn corner_index(&self) -> usize {
+        self.index
+    }
+
     /// The vertex index matching this corner.
     pub fn vertex_index(&self) -> usize {
         self.mesh.face_loops[self.raw_corner.face][self.raw_corner.vert]
@@ -451,13 +461,13 @@ impl<'m> Corner<'m> {
 
     /// Get the next corner moving counter-clockwise around the same face.
     pub fn next(&self) -> Self {
-        self.mesh.corner(self.raw_corner.face, (self.raw_corner.vert + 1) % self.loop_size())
+        self.mesh.corner_for(self.raw_corner.face, (self.raw_corner.vert + 1) % self.loop_size())
     }
 
     /// Get the previous corner (i.e. the next corner moving clockwise around the same face).
     pub fn prev(&self) -> Self {
         let size = self.loop_size();
-        self.mesh.corner(self.raw_corner.face, (self.raw_corner.vert + size - 1) % size)
+        self.mesh.corner_for(self.raw_corner.face, (self.raw_corner.vert + size - 1) % size)
     }
 
     /// Get the next corner rotating counter-clockwise around this vertex.
@@ -468,6 +478,15 @@ impl<'m> Corner<'m> {
     /// Get the next corner rotating clockwise around this vertex.
     pub fn right(&self) -> Self {
         Self::new(self.mesh, self.mesh.right_corners[self.index])
+    }
+
+    pub fn face_index(&self) -> usize {
+        self.raw_corner.face
+    }
+
+    pub fn face(&self) -> MeshFace {
+        self.mesh.face(self.face_index())
+            .expect("Corner not attached to a face.")
     }
 
     fn loop_size(&self) -> usize {
@@ -489,7 +508,7 @@ impl<'a> Debug for Corner<'a> {
                self.index,
                self.raw_corner.face,
                self.raw_corner.vert,
-               self.vertex_index());
+               self.vertex_index())?;
         Ok(())
     }
 }
@@ -501,7 +520,11 @@ pub struct MeshFace<'m> {
 
 impl<'a> MeshFace<'a> {
     pub fn corner(&self, index: usize) -> Corner {
-        self.mesh.corner(self.index, index)
+        self.mesh.corner_for(self.index, index)
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
     }
 }
 
@@ -602,8 +625,8 @@ impl MeshBuilder {
 
 #[cfg(test)]
 mod tests {
+    use crate::mesh::{Corner, Mesh, MeshBuilder};
     use crate::threed::Pt3;
-    use crate::mesh::{Mesh, MeshBuilder, Corner};
 
     #[test]
     fn vertices_from_corners() {
@@ -727,27 +750,27 @@ mod tests {
         }
 
         fn c_a(&self) -> Corner {
-            self.mesh.corner(0, 0)
+            self.mesh.corner_for(0, 0)
         }
 
         fn c_abd(&self) -> Corner {
-            self.mesh.corner(0, 1)
+            self.mesh.corner_for(0, 1)
         }
 
         fn c_adb(&self) -> Corner {
-            self.mesh.corner(0, 2)
+            self.mesh.corner_for(0, 2)
         }
 
         fn c_c(&self) -> Corner {
-            self.mesh.corner(1, 2)
+            self.mesh.corner_for(1, 2)
         }
 
         fn c_bdc(&self) -> Corner {
-            self.mesh.corner(1, 0)
+            self.mesh.corner_for(1, 0)
         }
 
         fn c_cbd(&self) -> Corner {
-            self.mesh.corner(1, 1)
+            self.mesh.corner_for(1, 1)
         }
     }
 }

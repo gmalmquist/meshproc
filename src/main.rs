@@ -1,20 +1,23 @@
+use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io::Write;
-use std::sync::Arc;
+use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 
 use futures::executor;
 use futures::io::{Error, ErrorKind};
 use futures::task::SpawnExt;
 
-use meshproc::{geom, threed};
-use meshproc::csg::{CsgObj, ToCsg, BlenderCsgObj};
-use meshproc::geom::{Cube, Polygon, Shape, FaceLike, Facecast};
+use meshproc::{geom, threed, walk_faces};
+use meshproc::csg::{BlenderCsgObj, CsgObj, ToCsg};
+use meshproc::geom::{Cube, Facecast, FaceLike, Polygon, Shape};
 use meshproc::load_mesh_stl;
+use meshproc::mesh::{Mesh, MeshBuilder};
 use meshproc::scalar::FloatRange;
 use meshproc::threed::{Pt3, Ray3, Vec3};
-use meshproc::mesh::{Mesh, MeshBuilder};
-use std::cmp::Ordering;
+use meshproc::VisitResult::{Continue, Skip, Stop};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -60,15 +63,15 @@ fn main() {
             for pillar in generate_internal_pillars(Arc::clone(&mesh)) {
                 csg = csg.difference(&pillar.to_csg());
             }
-        },
+        }
         "internal-plateaus" => {
             for plateau in generate_plateau_supports(Arc::clone(&mesh)) {
                 csg = csg.difference(&plateau.to_csg());
             }
-        },
+        }
         "roundtrip" => {
             // no-op, we just leave it alone.
-        },
+        }
         s => {
             eprintln!("Unknown command {}", s);
             return;
@@ -95,52 +98,95 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
     let up = Vec3::up();
     let down = Vec3::down();
 
-    let mut faces_to_support = vec![];
+    let faces_used = Arc::new(RwLock::new(HashSet::new()));
+
+    let threadpool = executor::ThreadPoolBuilder::new()
+        .create()
+        .expect("Couldn't create a thread pool.");
+
+    let (px, rx) = std::sync::mpsc::channel();
+    let mut futures = vec![];
 
     for (i, face) in mesh.faces().enumerate() {
-        if face.normal().dot(&up).abs() < 0.99 {
-            // Isn't horizontal.
-            continue;
-        }
+        let mesh = Arc::clone(&mesh);
+        let faces_used = Arc::clone(&faces_used);
+        let px = px.clone();
+        futures.push(threadpool.spawn_with_handle(async move {
+            let face = mesh.face(i).unwrap();
+            if faces_used.read().unwrap().contains(&i) {
+                return;
+            }
 
-        if face.centroid().z < mesh.bounds.0.z + clearance {
-            // Is too close to the bottom of the mesh to require support.
-            continue;
-        }
+            if face.area() < (clearance * 2) * (clearance * 2) {
+                return;
+            }
 
-        let mut poly = geom::Polygon::new(face.clone_vertices());
+            if face.normal().dot(&up).abs() < 0.99 {
+                // Isn't horizontal.
+                return;
+            }
 
-        let centroid = poly.centroid();
+            if face.centroid().z < mesh.bounds.0.z + clearance {
+                // Is too close to the bottom of the mesh to require support.
+                return;
+            }
 
-        for v in &mut poly.vertices {
-            *v = *v + (centroid - *v).normalized();
-            v.z -= 0.001; // Makes sure we don't collide with ourselves for raycasting.
-        }
+            let face = Rc::new(face);
+            let mut poly = geom::Polygon::new(face.clone_vertices());
 
-        let downcast = mesh.facecast(&poly, &down);
-        if downcast.is_none() {
-            // There's nothing below us, that means this face is actually the bottom surface of the
-            // mesh, and we don't want to do anything with it.
-            continue;
-        }
-        let downcast = downcast.unwrap();
+            let centroid = poly.centroid();
 
-        if downcast.distance < clearance * 2. {
-            // We're too close to existing geometry below us to warrant generating any internal
-            // support structures.
-            continue;
-        }
+            for v in &mut poly.vertices {
+                *v = *v + (centroid - *v).normalized();
+                v.z -= 0.001; // Makes sure we don't collide with ourselves for raycasting.
+            }
 
-        eprint!("Face {} may have a plateau.\r", i);
+            let downcast = mesh.facecast(&poly, &down);
+            if downcast.is_none() {
+                // There's nothing below us, that means this face is actually the bottom surface of the
+                // mesh, and we don't want to do anything with it.
+                return;
+            }
+            let downcast = downcast.unwrap();
 
-        faces_to_support.push((poly, downcast.distance));
+            if downcast.distance < clearance * 2. {
+                // We're too close to existing geometry below us to warrant generating any internal
+                // support structures.
+                return;
+            }
+
+            eprint!("Face {} may have a plateau.\r", i);
+
+            let face_group = RwLock::new(HashSet::new());
+            {
+                let mut fg = face_group.write().unwrap();
+                let start_face = Rc::clone(&face);
+                let face = Rc::clone(&face);
+                let faces_used = faces_used.write().unwrap();
+                walk_faces(&mesh, &start_face, move |f| {
+                    if faces_used.contains(&f.index()) {
+                        return Skip;
+                    }
+                    if f.normal().dot(&face.normal()) < 0.99 {
+                        return Skip;
+                    }
+                    fg.insert(f.index());
+                    Continue
+                });
+            }
+
+            let face_group = face_group.read().unwrap();
+            let mut faces_used = faces_used.write().unwrap();
+            for face in face_group.iter() {
+                faces_used.insert(*face);
+            }
+
+            px.send((poly, downcast.distance));
+        }).unwrap());
     }
+    drop(px);
 
-    let face = faces_to_support.iter()
-        .max_by(|(a,_), (b, _)| a.area().partial_cmp(&b.area())
-            .unwrap_or(Ordering::Equal));
-
-    if let Some((face, distance)) = face {
+    for (face, distance) in rx {
         // Let's generate a column under this face!
         eprintln!("Generating a plateau for {:#?}", face.clone_vertices());
 
@@ -170,7 +216,6 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
         }
 
         structures.push(Box::new(mb.build()));
-
     }
 
     structures
@@ -196,7 +241,7 @@ fn cube_normal_test() {
 
 fn cube_mesh_test() {
     let cube = geom::Cube::new(Pt3::zero(), Vec3::new(10., 10., 10.), true);
-    let mut csg = cube.mesh.to_csg();
+    let csg = cube.mesh.to_csg();
     csg.render_stl("cube-mesh-test.stl").expect("Failed to render cube mesh stl.");
 }
 
