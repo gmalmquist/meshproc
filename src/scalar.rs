@@ -114,6 +114,10 @@ impl<T: Clone> DenseNumberLine<T> {
         IntervalMatchIter::new(&self, match_func)
     }
 
+    pub fn values(&self) -> &Vec<T> {
+        &self.buckets
+    }
+
     fn bucket_index(&self, pos: f64) -> RangeValue<usize> {
         if self.is_empty() {
             return AfterEnd;
@@ -124,7 +128,7 @@ impl<T: Clone> DenseNumberLine<T> {
         if pos < self.start {
             return BeforeStart;
         }
-        Inside((self.buckets.len() as f64 * (pos - self.start) / (self.start - self.end)) as usize)
+        Inside((self.buckets.len() as f64 * (pos - self.start) / (self.end - self.start)) as usize)
     }
 
     fn is_empty(&self) -> bool {
@@ -148,6 +152,14 @@ impl Interval {
     pub fn is_empty(&self) -> bool {
         self.start >= self.end
     }
+
+    pub fn center(&self) -> f64 {
+        (self.start + self.end) / 2.
+    }
+
+    pub fn length(&self) -> f64 {
+        return self.end - self.start;
+    }
 }
 
 enum RangeValue<T> {
@@ -170,6 +182,12 @@ impl<'a, T, F> IntervalMatchIter<'a, T, F> where F: Fn(&T) -> bool {
             index: 0,
         }
     }
+
+    fn index_to_pos(&self, index: usize) -> f64 {
+        let a = self.number_line.start;
+        let b = self.number_line.end;
+        a + (b - a) * (index as f64) / (self.number_line.buckets.len() as f64)
+    }
 }
 
 impl<'a, T, F> Iterator for IntervalMatchIter<'a, T, F> where F: Fn(&T) -> bool {
@@ -180,9 +198,21 @@ impl<'a, T, F> Iterator for IntervalMatchIter<'a, T, F> where F: Fn(&T) -> bool 
             return None;
         }
 
+        let mut interval: Option<Interval> = None;
         for i in self.index..self.number_line.buckets.len() {
-            if (self.match_func)(&self.number_line.buckets[i]) {}
+            self.index = i + 1;
+            let pos = self.index_to_pos(i);
+            if (self.match_func)(&self.number_line.buckets[i]) {
+                if interval.is_none() {
+                    interval = Some(Interval::new(pos, pos));
+                } else {
+                    interval.as_mut().unwrap().end = self.index_to_pos(i + 1);
+                }
+            } else if interval.is_some() {
+                interval.as_mut().unwrap().end = pos;
+                break;
+            }
         }
-        None
+        interval
     }
 }

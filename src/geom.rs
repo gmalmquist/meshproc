@@ -8,7 +8,7 @@ use crate::threed::{Basis3, Frame3, Pt3, Ray3, Vec3};
 
 pub trait Shape {
     fn raycast(&self, ray: &Ray3) -> Option<RaycastHit>;
-    fn signed_distance(&self, pt: Pt3) -> f64;
+    fn signed_distance(&self, pt: &Pt3) -> f64;
 }
 
 pub struct RaycastHit {
@@ -27,7 +27,7 @@ impl Plane {
         Self { origin, normal }
     }
 
-    pub fn project(&self, pt: Pt3) -> Pt3 {
+    pub fn project(&self, pt: &Pt3) -> Pt3 {
         return (pt - self.origin).off_axis(&self.normal) + self.origin;
     }
 }
@@ -53,7 +53,7 @@ impl Shape for Plane {
         })
     }
 
-    fn signed_distance(&self, pt: Pt3) -> f64 {
+    fn signed_distance(&self, pt: &Pt3) -> f64 {
         return (pt - self.origin) * self.normal;
     }
 }
@@ -199,7 +199,7 @@ impl<T: FaceLike<T>> Shape for T {
         };
     }
 
-    fn signed_distance(&self, pt: Pt3) -> f64 {
+    fn signed_distance(&self, pt: &Pt3) -> f64 {
         let plane = self.plane();
         let sign = if plane.normal * (pt - plane.origin) >= 0.0 {
             1.0
@@ -429,7 +429,7 @@ impl<'a> Edge<'a> {
         return self.dst - self.src;
     }
 
-    pub fn distance(&self, pt: Pt3) -> f64 {
+    pub fn distance(&self, pt: &Pt3) -> f64 {
         let frame = Frame3::new(self.src.clone(), Basis3::new1(self.vector()));
         let mut local = frame.project(&pt);
         if local.i > 0.0 && local.i < 1.0 {
@@ -573,7 +573,7 @@ impl Shape for Cube {
         self.mesh.raycast(ray)
     }
 
-    fn signed_distance(&self, pt: Pt3) -> f64 {
+    fn signed_distance(&self, pt: &Pt3) -> f64 {
         self.mesh.signed_distance(pt)
     }
 }
@@ -647,7 +647,7 @@ impl Shape for Sphere {
         })
     }
 
-    fn signed_distance(&self, pt: Pt3) -> f64 {
+    fn signed_distance(&self, pt: &Pt3) -> f64 {
         return (pt - self.center).mag() - self.radius;
     }
 }

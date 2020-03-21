@@ -381,7 +381,7 @@ impl geom::Shape for Mesh {
         closest_hit
     }
 
-    fn signed_distance(&self, pt: Pt3) -> f64 {
+    fn signed_distance(&self, pt: &Pt3) -> f64 {
         let mut distance = INFINITY;
         for poly in self.faces() {
             let dist = poly.signed_distance(pt);

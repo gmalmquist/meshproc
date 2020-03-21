@@ -207,6 +207,12 @@ impl Vec3 {
         self.z *= scale.2;
     }
 
+    pub fn set(&mut self, vec: &Vec3) {
+        self.x = vec.x;
+        self.y = vec.y;
+        self.z = vec.z;
+    }
+
     pub fn cross(&self, other: &Vec3) -> Vec3 {
         let a = self;
         let b = other;

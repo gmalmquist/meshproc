@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
-use std::collections::{HashSet, HashMap};
+use std::cmp::Ordering::Equal;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -15,7 +16,7 @@ use meshproc::csg::{BlenderCsgObj, CsgObj, ToCsg};
 use meshproc::geom::{Cube, Facecast, FaceLike, Polygon, Shape};
 use meshproc::load_mesh_stl;
 use meshproc::mesh::{Mesh, MeshBuilder};
-use meshproc::scalar::FloatRange;
+use meshproc::scalar::{DenseNumberLine, FloatRange, Interval};
 use meshproc::threed::{Pt3, Ray3, Vec3};
 use meshproc::VisitResult::{Continue, Skip, Stop};
 
@@ -96,7 +97,170 @@ fn main() {
 }
 
 fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>> {
-    unimplemented!()
+    let threadpool = executor::ThreadPoolBuilder::new()
+        .create()
+        .expect("Unable to create thread pool.");
+
+    let (px, rx) = std::sync::mpsc::channel();
+
+    for i in 0..mesh.face_count() {
+        let mesh = Arc::clone(&mesh);
+        let px = px.clone();
+        threadpool.spawn(async move {
+            let face = mesh.face(i).unwrap();
+
+            let up = Vec3::up();
+            let down = Vec3::down();
+
+            if face.normal().dot(&up).abs() < 0.99 {
+                // Isn't horizontal.
+                return;
+            }
+
+            if face.centroid().z < mesh.bounds.0.z + 1.0 {
+                // Is too close to the bottom of the mesh to require support.
+                return;
+            }
+
+            let mut poly = geom::Polygon::new(face.vertices()
+                .map(|v| v.clone())
+                .collect());
+            for p in &mut poly.vertices {
+                p.z -= 0.001;
+            }
+
+//            let downcast = mesh.facecast(&poly, &down);
+//            if downcast.is_none() {
+//                // There's nothing below us, that means this face is actually the bottom surface of the
+//                // mesh, and we don't want to do anything with it.
+//                return;
+//            }
+//
+//            let downcast = downcast.unwrap();
+//            if downcast.distance <= 1.0 {
+//                return; // Already supported.
+//            }
+
+            // We want a plane between 0.5 and 1 unit below the face.
+            let interval = Interval::new(
+                face.centroid().z - 1.0,
+                face.centroid().z - 0.5,
+            );
+
+            px.send((interval, face.area()));
+        }).expect("Unable to spawn thread.");
+    }
+    drop(px);
+
+    let mut plane_positions = DenseNumberLine::new(
+        mesh.bounds.0.z, mesh.bounds.1.z, 0.1, |_| 0.0);
+
+    let mut interval_count = 0;
+    for (interval, weight) in rx {
+        plane_positions.merge(&interval, weight, |a, b| { a + b });
+        eprint!("Processed interval {} ({}, {}] weight {}    \r",
+                interval_count, interval.start, interval.end, weight);
+        interval_count += 1;
+        std::io::stderr().flush();
+    }
+    eprintln!();
+
+    eprintln!("values: [{}]", plane_positions.values().iter()
+        .map(|f| format!("{}", f))
+        .collect::<Vec<_>>()
+        .join(", "));
+
+    let mut structures: Vec<Box<dyn ToCsg<BlenderCsgObj>>> = vec![];
+
+    let mut plane_position_weights: Vec<_> = plane_positions.values().iter().collect();
+    plane_position_weights.dedup_by(|a, b| a == b);
+    plane_position_weights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Equal));
+    plane_position_weights.reverse();
+
+//    let (px, rx) = std::sync::mpsc::channel();
+
+    for weight in plane_position_weights {
+        if *weight <= 0. {
+            break;
+        }
+        eprintln!("\nFinding planes for {}", weight);
+        for candidate in plane_positions.intervals_matching(|f| { f == weight }) {
+            if candidate.length() < 0.1 {
+                continue;
+            }
+            eprintln!("Candidate plane between {} and {}", candidate.start, candidate.end);
+            eprintln!("  weight = {}", weight);
+            let mesh = Arc::clone(&mesh);
+            threadpool.spawn(async move {
+                let min_pt = Pt3::new(
+                    mesh.bounds.0.x,
+                    mesh.bounds.0.y,
+                    candidate.start,
+                );
+
+                let max_pt = Vec3::new(
+                    mesh.bounds.1.x,
+                    mesh.bounds.1.y,
+                    candidate.end,
+                );
+
+                let horizontal_resolution = 1.0;
+
+                let directions = vec![
+                    Vec3::up(),
+                    Vec3::down(),
+                    Vec3::left(),
+                    Vec3::right(),
+                    Vec3::forward(),
+                    Vec3::backward(),
+                ];
+
+                let mut voxel = Pt3::zero();
+                voxel.z = candidate.center();
+
+                let xpositions: Vec<_> = FloatRange::from_step_size(min_pt.x, max_pt.x, horizontal_resolution).collect();
+                let ypositions: Vec<_> = FloatRange::from_step_size(min_pt.y, max_pt.y, horizontal_resolution).collect();
+
+                let mut grid = vec![vec![0.; xpositions.len()]; ypositions.len()];
+
+                for (j, &x) in xpositions.iter().enumerate() {
+                    voxel.x = x;
+                    for (i, &y) in ypositions.iter().enumerate() {
+                        voxel.y = y;
+                        grid[i][j] = mesh.signed_distance(&voxel);
+                    }
+                }
+
+                let mut used: HashSet<(usize, usize)> = HashSet::new();
+
+                for i in 0..grid.len() {
+                    for j in 0..grid[i].len() {
+                        if used.contains(&(i, j)) {
+                            continue;
+                        }
+                        
+                    }
+                }
+
+            });
+//            structures.push(Box::new(Cube::new(
+//                Pt3::new(
+//                    (mesh.bounds.0.x + mesh.bounds.1.x) / 2.,
+//                    (mesh.bounds.0.y + mesh.bounds.1.y) / 2.,
+//                    candidate.center(),
+//                ),
+//                Vec3::new(
+//                    mesh.bounds.1.x - mesh.bounds.0.x,
+//                    mesh.bounds.1.y - mesh.bounds.0.y,
+//                    candidate.end - candidate.start,
+//                ),
+//                true,
+//            )));
+        }
+    }
+
+
+    structures
 }
 
 
