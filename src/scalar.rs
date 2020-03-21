@@ -1,4 +1,7 @@
-use std::cmp::max;
+use std::cmp::{max, Ordering};
+use std::process::exit;
+
+use crate::scalar::RangeValue::{AfterEnd, BeforeStart, Inside};
 
 fn lerp(a: f64, b: f64, s: f64) -> f64 {
     return (1. - s) * a + s * b;
@@ -45,5 +48,141 @@ impl Iterator for FloatRange {
         };
         self.current_index += 1;
         Some(lerp(self.start_inclusive, self.end_inclusive, s))
+    }
+}
+
+
+pub struct DenseNumberLine<T> {
+    buckets: Vec<T>,
+    start: f64,
+    end: f64,
+}
+
+impl<T: Clone> DenseNumberLine<T> {
+    pub fn new<F>(start: f64, end: f64, resolution: f64, initial: F) -> Self
+        where F: Fn(f64) -> T {
+        let buckets = if start < end {
+            FloatRange::from_step_size(start, end, resolution)
+                .map(initial)
+                .collect()
+        } else {
+            vec![]
+        };
+        Self {
+            start,
+            end,
+            buckets,
+        }
+    }
+
+    pub fn merge<F>(&mut self, interval: &Interval, value: T, merge_func: F)
+        where F: Fn(&T, &T) -> T {
+        if interval.is_empty() {
+            return;
+        }
+        let a = match self.bucket_index(interval.start) {
+            AfterEnd => return,
+            BeforeStart => 0,
+            Inside(i) => i,
+        };
+
+        let b = match self.bucket_index(interval.end) {
+            AfterEnd => self.buckets.len() - 1,
+            BeforeStart => return,
+            Inside(i) => i,
+        };
+
+        for i in a..(b + 1) {
+            self.buckets[i] = (merge_func)(&self.buckets[i], &value);
+        }
+    }
+
+    pub fn set(&mut self, interval: &Interval, value: T) {
+        self.merge(interval, value, |old_v, new_v| new_v.clone());
+    }
+
+    pub fn get(&self, pos: f64) -> Option<&T> {
+        if let Inside(i) = self.bucket_index(pos) {
+            Some(&self.buckets[i])
+        } else {
+            None
+        }
+    }
+
+    pub fn intervals_matching<F>(&self, match_func: F) -> IntervalMatchIter<T, F>
+        where F: Fn(&T) -> bool {
+        IntervalMatchIter::new(&self, match_func)
+    }
+
+    fn bucket_index(&self, pos: f64) -> RangeValue<usize> {
+        if self.is_empty() {
+            return AfterEnd;
+        }
+        if pos >= self.end {
+            return AfterEnd;
+        }
+        if pos < self.start {
+            return BeforeStart;
+        }
+        Inside((self.buckets.len() as f64 * (pos - self.start) / (self.start - self.end)) as usize)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buckets.is_empty()
+    }
+}
+
+pub struct Interval {
+    pub start: f64,
+    pub end: f64,
+}
+
+impl Interval {
+    pub fn new(start: f64, end: f64) -> Self {
+        Self {
+            start,
+            end,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start >= self.end
+    }
+}
+
+enum RangeValue<T> {
+    BeforeStart,
+    Inside(T),
+    AfterEnd,
+}
+
+pub struct IntervalMatchIter<'a, T, F> where F: Fn(&T) -> bool {
+    match_func: F,
+    index: usize,
+    number_line: &'a DenseNumberLine<T>,
+}
+
+impl<'a, T, F> IntervalMatchIter<'a, T, F> where F: Fn(&T) -> bool {
+    fn new(number_line: &'a DenseNumberLine<T>, match_func: F) -> Self {
+        Self {
+            number_line,
+            match_func,
+            index: 0,
+        }
+    }
+}
+
+impl<'a, T, F> Iterator for IntervalMatchIter<'a, T, F> where F: Fn(&T) -> bool {
+    type Item = Interval;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.number_line.buckets.len() {
+            return None;
+        }
+
+        for i in self.index..self.number_line.buckets.len() {
+            if (self.match_func)(&self.number_line.buckets[i]) {}
+        }
+        None
     }
 }

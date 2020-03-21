@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -69,6 +69,11 @@ fn main() {
                 csg = csg.difference(&plateau.to_csg());
             }
         }
+        "internal-planes" => {
+            for structure in generate_support_planes(Arc::clone(&mesh)) {
+                csg = csg.difference(&structure.to_csg());
+            }
+        }
         "roundtrip" => {
             // no-op, we just leave it alone.
         }
@@ -89,6 +94,11 @@ fn main() {
         }
     }
 }
+
+fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>> {
+    unimplemented!()
+}
+
 
 fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>> {
     let mut structures: Vec<Box<dyn ToCsg<BlenderCsgObj>>> = vec![];
@@ -117,7 +127,7 @@ fn generate_plateau_supports(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj
                 return;
             }
 
-            if face.area() < (clearance * 2) * (clearance * 2) {
+            if face.area() < (clearance * 2.) * (clearance * 2.) {
                 return;
             }
 
