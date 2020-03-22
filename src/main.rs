@@ -103,6 +103,10 @@ fn main() {
 }
 
 fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>> {
+    let horizontal_resolution = 1.0;
+    let vertical_resolution = 0.1;
+    let support_clearance = 0.4;
+
     let threadpool = executor::ThreadPoolBuilder::new()
         .create()
         .expect("Unable to create thread pool.");
@@ -147,7 +151,7 @@ fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>
     drop(px);
 
     let mut plane_positions = DenseNumberLine::new(
-        mesh.bounds.0.z, mesh.bounds.1.z, 0.1, |_| 0.0);
+        mesh.bounds.0.z, mesh.bounds.1.z, vertical_resolution, |_| 0.0);
 
     let mut interval_count = 0;
     for (interval, weight) in rx {
@@ -196,8 +200,6 @@ fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>
                     mesh.bounds.1.y,
                     candidate.end,
                 );
-
-                let horizontal_resolution = 2.0;
 
                 let mut voxel = Pt3::zero();
                 voxel.z = candidate.center();
@@ -251,7 +253,7 @@ fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>
 
                 let mut used: HashSet<(usize, usize)> = HashSet::new();
 
-                let clearance = 0.4;
+                let clearance = support_clearance;
                 for row in 0..(grid.len() - 1) {
                     for col in 0..(grid[row].len() - 1) {
                         eprint!("checking voxel {}, {}\r", row, col);
