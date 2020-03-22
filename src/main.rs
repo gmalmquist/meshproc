@@ -251,7 +251,7 @@ fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>
 
                 let mut used: HashSet<(usize, usize)> = HashSet::new();
 
-                let clearance = 0.1;
+                let clearance = 0.4;
                 for row in 0..(grid.len() - 1) {
                     for col in 0..(grid[row].len() - 1) {
                         eprint!("checking voxel {}, {}\r", row, col);
