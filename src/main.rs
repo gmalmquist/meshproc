@@ -19,6 +19,7 @@ use meshproc::mesh::{Mesh, MeshBuilder};
 use meshproc::scalar::{DenseNumberLine, FloatRange, Interval};
 use meshproc::threed::{Pt3, Ray3, Vec3};
 use meshproc::VisitResult::{Continue, Skip, Stop};
+use std::panic::resume_unwind;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -72,6 +73,11 @@ fn main() {
         }
         "internal-planes" => {
             for structure in generate_support_planes(Arc::clone(&mesh)) {
+                csg = csg.difference(&structure.to_csg());
+            }
+        }
+        "signed-distance-test" => {
+            for structure in signed_distance_test(Arc::clone(&mesh)) {
                 csg = csg.difference(&structure.to_csg());
             }
         }
@@ -129,18 +135,6 @@ fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>
                 p.z -= 0.001;
             }
 
-//            let downcast = mesh.facecast(&poly, &down);
-//            if downcast.is_none() {
-//                // There's nothing below us, that means this face is actually the bottom surface of the
-//                // mesh, and we don't want to do anything with it.
-//                return;
-//            }
-//
-//            let downcast = downcast.unwrap();
-//            if downcast.distance <= 1.0 {
-//                return; // Already supported.
-//            }
-
             // We want a plane between 0.5 and 1 unit below the face.
             let interval = Interval::new(
                 face.centroid().z - 1.0,
@@ -170,14 +164,12 @@ fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>
         .collect::<Vec<_>>()
         .join(", "));
 
-    let mut structures: Vec<Box<dyn ToCsg<BlenderCsgObj>>> = vec![];
-
     let mut plane_position_weights: Vec<_> = plane_positions.values().iter().collect();
     plane_position_weights.dedup_by(|a, b| a == b);
     plane_position_weights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Equal));
     plane_position_weights.reverse();
 
-//    let (px, rx) = std::sync::mpsc::channel();
+    let (px, rx) = std::sync::mpsc::channel();
 
     for weight in plane_position_weights {
         if *weight <= 0. {
@@ -191,6 +183,7 @@ fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>
             eprintln!("Candidate plane between {} and {}", candidate.start, candidate.end);
             eprintln!("  weight = {}", weight);
             let mesh = Arc::clone(&mesh);
+            let px = px.clone();
             threadpool.spawn(async move {
                 let min_pt = Pt3::new(
                     mesh.bounds.0.x,
@@ -204,7 +197,15 @@ fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>
                     candidate.end,
                 );
 
-                let horizontal_resolution = 1.0;
+                let horizontal_resolution = 2.0;
+
+                let mut voxel = Pt3::zero();
+                voxel.z = candidate.center();
+
+                let xpositions: Vec<_> = FloatRange::from_step_size(min_pt.x, max_pt.x, horizontal_resolution).collect();
+                let ypositions: Vec<_> = FloatRange::from_step_size(min_pt.y, max_pt.y, horizontal_resolution).collect();
+
+                let mut grid = vec![vec![0.; xpositions.len()]; ypositions.len()];
 
                 let directions = vec![
                     Vec3::up(),
@@ -215,50 +216,135 @@ fn generate_support_planes(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>
                     Vec3::backward(),
                 ];
 
-                let mut voxel = Pt3::zero();
-                voxel.z = candidate.center();
-
-                let xpositions: Vec<_> = FloatRange::from_step_size(min_pt.x, max_pt.x, horizontal_resolution).collect();
-                let ypositions: Vec<_> = FloatRange::from_step_size(min_pt.y, max_pt.y, horizontal_resolution).collect();
-
-                let mut grid = vec![vec![0.; xpositions.len()]; ypositions.len()];
+                let mut ray = Ray3::new(Pt3::zero(), Vec3::zero());
 
                 for (j, &x) in xpositions.iter().enumerate() {
                     voxel.x = x;
                     for (i, &y) in ypositions.iter().enumerate() {
+                        eprint!("computing voxel sdist {}, {}\r", i, j);
+                        std::io::stderr().flush();
                         voxel.y = y;
-                        grid[i][j] = mesh.signed_distance(&voxel);
+
+                        let mut closest_hit = None;
+
+                        ray.origin.set(&voxel);
+                        for dir in &directions {
+                            ray.direction.set(&dir);
+                            if let Some(hit) = mesh.raycast(&ray) {
+                                if closest_hit.is_none() {
+                                    closest_hit = Some(hit.distance);
+                                } else {
+                                    closest_hit = Some(closest_hit.unwrap().min(hit.distance));
+                                }
+                            } else {
+                                // If we didn't hit anything, we're outside (*gasp*) and thus
+                                // cannot place internal support here. So count it the same as
+                                // being inside a wall.
+                                closest_hit = Some(0.);
+                                break;
+                            }
+                        }
+
+                        grid[i][j] = -closest_hit.unwrap_or(0.);
                     }
                 }
 
                 let mut used: HashSet<(usize, usize)> = HashSet::new();
 
-                for i in 0..grid.len() {
-                    for j in 0..grid[i].len() {
-                        if used.contains(&(i, j)) {
+                let clearance = 0.1;
+                for row in 0..(grid.len() - 1) {
+                    for col in 0..(grid[row].len() - 1) {
+                        eprint!("checking voxel {}, {}\r", row, col);
+                        std::io::stderr().flush();
+
+                        if used.contains(&(row, col)) {
                             continue;
                         }
-                        
+                        if grid[row][col] > -clearance {
+                            // Must be inside, and at least |clearance| away from anything.
+                            continue;
+                        }
+
+                        let mut max_row = row;
+                        let mut max_col = col;
+
+                        loop {
+                            let mut can_expand_col = false;
+                            if max_col + 1 < grid[row].len() {
+                                can_expand_col = true;
+                                for i in row..(max_row + 1) {
+                                    let coord = (i, max_col + 1);
+                                    if used.contains(&coord) || grid[coord.0][coord.1] > -clearance {
+                                        can_expand_col = false;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if can_expand_col {
+                                max_col += 1;
+                            }
+
+                            let mut can_expand_row = false;
+                            if max_row + 1 < grid.len() {
+                                can_expand_row = true;
+                                for j in col..(max_col + 1) {
+                                    let coord = (max_row + 1, j);
+                                    if used.contains(&coord) || grid[coord.0][coord.1] > -clearance {
+                                        can_expand_row = false;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if can_expand_row {
+                                max_row += 1;
+                            }
+
+                            if !can_expand_col && !can_expand_row {
+                                break;
+                            }
+                        }
+
+                        if max_row == row || max_col == col {
+                            // Not large enough to be useful.
+                            continue;
+                        }
+
+                        for i in row..(max_row + 0) {
+                            for j in col..(max_col + 0) {
+                                used.insert((i, j));
+                            }
+                        }
+
+                        eprintln!("\nGenerating cube from ({}, {}) to ({}, {})",
+                                  row, col, max_row, max_col);
+
+                        let cube = Cube::new(
+                            Pt3::new(
+                                xpositions[col],
+                                ypositions[row],
+                                candidate.start,
+                            ),
+                            Vec3::new(
+                                xpositions[max_col] - xpositions[col],
+                                ypositions[max_row] - ypositions[row],
+                                candidate.length(),
+                            ),
+                            false,
+                        );
+                        px.send(cube);
                     }
                 }
-
             });
-//            structures.push(Box::new(Cube::new(
-//                Pt3::new(
-//                    (mesh.bounds.0.x + mesh.bounds.1.x) / 2.,
-//                    (mesh.bounds.0.y + mesh.bounds.1.y) / 2.,
-//                    candidate.center(),
-//                ),
-//                Vec3::new(
-//                    mesh.bounds.1.x - mesh.bounds.0.x,
-//                    mesh.bounds.1.y - mesh.bounds.0.y,
-//                    candidate.end - candidate.start,
-//                ),
-//                true,
-//            )));
         }
     }
+    drop(px);
 
+    let mut structures: Vec<Box<dyn ToCsg<BlenderCsgObj>>> = vec![];
+    for cube in rx {
+        structures.push(Box::new(cube));
+    }
 
     structures
 }
@@ -417,6 +503,51 @@ fn cube_mesh_test() {
     let cube = geom::Cube::new(Pt3::zero(), Vec3::new(10., 10., 10.), true);
     let csg = cube.mesh.to_csg();
     csg.render_stl("cube-mesh-test.stl").expect("Failed to render cube mesh stl.");
+}
+
+fn signed_distance_test(mesh: Arc<Mesh>) -> Vec<Box<dyn ToCsg<BlenderCsgObj>>> {
+    let mut results: Vec<Box<dyn ToCsg<BlenderCsgObj>>> = vec![];
+    let resolution = 5.;
+    let (min, max) = mesh.bounds;
+
+    let threadpool = executor::ThreadPoolBuilder::new().create().unwrap();
+    let (px, rx) = std::sync::mpsc::channel();
+
+    for x in FloatRange::from_step_size(min.x, max.x, resolution) {
+        for y in FloatRange::from_step_size(min.y, max.y, resolution) {
+            for z in FloatRange::from_step_size(min.z, max.z, resolution) {
+                let px = px.clone();
+                let mesh = Arc::clone(&mesh);
+                threadpool.spawn(async move {
+                    let pt = Pt3::new(x, y, z);
+                    eprint!("Processing {:.1}      \r", pt);
+                    let sd = mesh.signed_distance(&pt);
+                    px.send((pt, sd));
+                });
+            }
+        }
+    }
+    drop(px);
+
+    for (pt, sd) in rx {
+        let radius = 0.1_f64.max((sd.abs() + 1.0) / (max - min).mag());
+        if sd < 0. {
+            results.push(Box::new(geom::Cube::new(
+                pt.clone(),
+                Vec3::new(radius, radius, radius),
+                true,
+            )));
+        } else {
+            results.push(Box::new(geom::Sphere::new(
+                pt.clone(),
+                radius,
+            )));
+        }
+    }
+
+    eprintln!("\nDone.");
+
+    results
 }
 
 fn generate_internal_pillars(mesh: Arc<Mesh>) -> Vec<geom::Cube> {

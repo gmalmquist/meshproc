@@ -382,6 +382,7 @@ impl geom::Shape for Mesh {
     }
 
     fn signed_distance(&self, pt: &Pt3) -> f64 {
+        // NB: This is completely wrong. Not just buggy- the algorithm here doesn't even make sense.
         let mut distance = INFINITY;
         for poly in self.faces() {
             let dist = poly.signed_distance(pt);

@@ -80,8 +80,8 @@ pub trait FaceLike<T: FaceLike<T> = Self>: Shape + Edgecast {
 
     fn normal(&self) -> Vec3 {
         let edge_one = self.vertex(1) - self.vertex(0);
-        let edge_two = self.vertex(2) - self.vertex(1);
-        edge_two.cross(&edge_one).normalized()
+        let edge_two = self.vertex(2) - self.vertex(0);
+        edge_one.cross(&edge_two).normalized()
     }
 
     fn centroid(&self) -> Pt3 {
